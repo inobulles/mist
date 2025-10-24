@@ -6,17 +6,19 @@
 #include <EGL/egl.h>
 #include <GLES/gl.h>
 
-#include <android/sensor.h>
 #include <android/log.h>
 #include <android_native_app_glue.h>
+#include <vector>
 
 #define XR_USE_PLATFORM_ANDROID
+#define XR_USE_GRAPHICS_API_OPENGL_ES
 
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
 #define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "native-activity", __VA_ARGS__))
 #define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "native-activity", __VA_ARGS__))
+#define LOGE(...) ((void)__android_log_print(ANDROID_LOG_ERROR, "native-activity", __VA_ARGS__))
 
 /**
  * Our saved state data.
@@ -32,10 +34,6 @@ struct saved_state {
  */
 struct engine {
 	struct android_app* app;
-
-	ASensorManager* sensorManager;
-	const ASensor* accelerometerSensor;
-	ASensorEventQueue* sensorEventQueue;
 
 	int animating;
 	EGLDisplay display;
@@ -213,23 +211,8 @@ static void engine_handle_cmd(struct android_app* app, int32_t cmd) {
 			engine_term_display(engine);
 			break;
 		case APP_CMD_GAINED_FOCUS:
-			// When our app gains focus, we start monitoring the accelerometer.
-			if (engine->accelerometerSensor != NULL) {
-				ASensorEventQueue_enableSensor(engine->sensorEventQueue,
-											   engine->accelerometerSensor);
-				// We'd like to get 60 events per second (in us).
-				ASensorEventQueue_setEventRate(engine->sensorEventQueue,
-											   engine->accelerometerSensor,
-											   (1000L/60)*1000);
-			}
 			break;
 		case APP_CMD_LOST_FOCUS:
-			// When our app loses focus, we stop monitoring the accelerometer.
-			// This is to avoid consuming battery while not being used.
-			if (engine->accelerometerSensor != NULL) {
-				ASensorEventQueue_disableSensor(engine->sensorEventQueue,
-												engine->accelerometerSensor);
-			}
 			// Also stop animating.
 			engine->animating = 0;
 			engine_draw_frame(engine);
@@ -251,12 +234,12 @@ void android_main(struct android_app* state) {
 	state->onInputEvent = engine_handle_input;
 	engine.app = state;
 
-	// OpenXR setup.
+	// Initialize OpenXR loader.
 
 	PFN_xrInitializeLoaderKHR xrInitializeLoaderKHR = nullptr;
 
 	if (xrGetInstanceProcAddr(XR_NULL_HANDLE, "xrInitializeLoaderKHR", (PFN_xrVoidFunction*) &xrInitializeLoaderKHR) != XR_SUCCESS || xrInitializeLoaderKHR == nullptr) {
-		LOGW("Getting xrInitializeLoaderKHR failed.");
+		LOGE("Getting xrInitializeLoaderKHR failed.");
 		return;
 	}
 
@@ -266,31 +249,113 @@ void android_main(struct android_app* state) {
 	loader_init_info.applicationContext = state->activity->clazz;
 
 	if (xrInitializeLoaderKHR((XrLoaderInitInfoBaseHeaderKHR*) &loader_init_info) != XR_SUCCESS) {
-		LOGW("xrInitializeLoaderKHR failed.");
+		LOGE("xrInitializeLoaderKHR failed.");
 		return;
 	}
 
-	XrInstanceCreateInfo info{XR_TYPE_INSTANCE_CREATE_INFO};
-	strcpy(info.applicationInfo.applicationName, "Mist");
-	info.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 0, 0); // Oculus Quest only supports OpenXR 1.0.0.
+	// Enumerate API layers runtime has made available.
+	// No need to check any as we're not using anything special at the moment.
+
+	uint32_t api_layer_count;
+
+	if (xrEnumerateApiLayerProperties(0, &api_layer_count, nullptr) != XR_SUCCESS) {
+		LOGE("Failed to enumerate API layers.");
+		return;
+	}
+
+	auto api_layers = std::vector<XrApiLayerProperties>(api_layer_count, {XR_TYPE_API_LAYER_PROPERTIES});
+
+	if (xrEnumerateApiLayerProperties(api_layer_count, &api_layer_count, api_layers.data()) != XR_SUCCESS) {
+		LOGE("Failed to enumerate API layers.");
+		return;
+	}
+
+	for (auto &api_layer : api_layers) {
+		LOGI("OpenXR runtime supports '%s' API layer v%lu.", api_layer.layerName, api_layer.specVersion);
+	}
+
+	// Enumerate extensions runtime has made available.
+
+	uint32_t ext_count;
+
+	if (xrEnumerateInstanceExtensionProperties(nullptr, 0, &ext_count, nullptr) != XR_SUCCESS) {
+		LOGE("Failed to enumerate extensions.");
+		return;
+	}
+
+	LOGI("extension count: %d", ext_count);
+
+	auto exts = std::vector<XrExtensionProperties>(ext_count, {XR_TYPE_EXTENSION_PROPERTIES});
+
+	XrResult rv = xrEnumerateInstanceExtensionProperties(nullptr, ext_count, &ext_count, exts.data());
+	if (rv != XR_SUCCESS) {
+		LOGE("Failed to enumerate extensions.");
+		return;
+	}
+
+	auto required_exts = std::vector{XR_EXT_DEBUG_UTILS_EXTENSION_NAME};
+
+	for (auto &ext : exts) {
+		LOGI("OpenXR runtime supports '%s' extension v%u.", ext.extensionName, ext.extensionVersion);
+	}
+
+	for (auto &required : required_exts) {
+		bool found = false;
+
+		for (auto &ext : exts) {
+			if (strcmp(required, ext.extensionName) == 0) {
+				found = true;
+			}
+		}
+
+		if (!found) {
+			LOGE("OpenXR runtime missing support for '%s' extension.", required);
+			return;
+		}
+	}
+
+	// Actually create instance.
+
+	XrApplicationInfo app_info = {
+		.applicationName = "Mist",
+		.applicationVersion = 1,
+		.engineName = "OpenXR Engine",
+		.engineVersion = 1,
+		.apiVersion = XR_MAKE_VERSION(1, 0, 0), // Oculus Quest only supports OpenXR 1.0.0.
+	};
+
+	XrInstanceCreateInfo info = {XR_TYPE_INSTANCE_CREATE_INFO};
+
+	info.applicationInfo = app_info;
+	info.enabledApiLayerCount = 0;
+	info.enabledExtensionCount = required_exts.size();
+	info.enabledExtensionNames = required_exts.data();
 
 	XrInstance instance = XR_NULL_HANDLE;
 	XrResult res = xrCreateInstance(&info, &instance);
 
 	if (res != XR_SUCCESS) {
-		LOGW("xrCreateInstance failed: %d", res);
+		LOGE("xrCreateInstance failed: %d", res);
 		return;
 	}
 
-	// Prepare to monitor accelerometer
-	engine.sensorManager = ASensorManager_getInstance();
-	engine.accelerometerSensor = ASensorManager_getDefaultSensor(
-										engine.sensorManager,
-										ASENSOR_TYPE_ACCELEROMETER);
-	engine.sensorEventQueue = ASensorManager_createEventQueue(
-									engine.sensorManager,
-									state->looper, LOOPER_ID_USER,
-									NULL, NULL);
+	// Get the instance properties.
+
+	XrInstanceProperties instance_props{XR_TYPE_INSTANCE_PROPERTIES};
+
+	if (xrGetInstanceProperties(instance, &instance_props) != XR_SUCCESS) {
+		LOGE("xrGetInstanceProperties failed.\n");
+		goto err_xrGetInstanceProperties;
+	}
+
+	LOGI("OpenXR runtime: %s %d.%d.%d",
+		instance_props.runtimeName,
+		XR_VERSION_MAJOR(instance_props.runtimeVersion),
+		XR_VERSION_MINOR(instance_props.runtimeVersion),
+		XR_VERSION_PATCH(instance_props.runtimeVersion)
+	);
+
+	// TODO At this point, we need to start looking into setting up the debug utils extension and session creation.
 
 	if (state->savedState != NULL) {
 		// We are starting with a previous saved state; restore from it.
@@ -316,19 +381,6 @@ void android_main(struct android_app* state) {
 				source->process(state, source);
 			}
 
-			// If a sensor has data, process it now.
-			if (ident == LOOPER_ID_USER) {
-				if (engine.accelerometerSensor != NULL) {
-					ASensorEvent event;
-					while (ASensorEventQueue_getEvents(engine.sensorEventQueue,
-													   &event, 1) > 0) {
-						LOGI("accelerometer: x=%f y=%f z=%f",
-							 event.acceleration.x, event.acceleration.y,
-							 event.acceleration.z);
-					}
-				}
-			}
-
 			// Check if we are exiting.
 			if (state->destroyRequested != 0) {
 				engine_term_display(&engine);
@@ -348,4 +400,10 @@ void android_main(struct android_app* state) {
 			engine_draw_frame(&engine);
 		}
 	}
+
+	// Cleanup.
+
+err_xrGetInstanceProperties:
+
+	xrDestroyInstance(instance);
 }
