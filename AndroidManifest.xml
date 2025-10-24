@@ -14,13 +14,6 @@
 		android:required="true"
 	/>
 
-	<!-- Require Vulkan 1.0.3 support. -->
-	<uses-feature
-		android:name="android.hardware.vulkan.version"
-		android:version="0x00400003"
-		android:required="true"
-	/>
-
 	<!-- Set to false for devices where the runtime is installed later on to work. -->
 	<uses-feature
 		android:name="android.hardware.vr.headtracking"
