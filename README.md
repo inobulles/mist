@@ -11,7 +11,7 @@ Gradle makes me sad and I kind of despise Android Studio, so I'm doing this manu
 Eventually I wanna integrate this with the [Bob buildsystem](https://github.com/inobulles/bob), but for now, especially as I'm still shaky about how all this Android stuff works, its easier to prototype like this.
 
 This expects you to have an Android SDK and NDK already installed, which you can either download with Android Studio or (preferably) with [`sdkmanager`](https://developer.android.com/tools/sdkmanager).
-You also have to point `build.sh` to the SDK through the `ANDROID_SDK` variable.
+You also have to point `build.sh` to the SDK through the `ANDROID_SDK` variable (in `config.sh`).
 When I add Android support to Bob the Builder, I will make it integrate with `sdkmanager`.
 
 To build the APK, simply run:
