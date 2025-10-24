@@ -26,6 +26,10 @@ ZIPALIGN=$BUILD_TOOLS_PATH/zipalign
 $CC -Wall -Werror -c $NATIVE_APP_GLUE_PATH/android_native_app_glue.c -o .out/native_app_glue.o
 $AR rcs .out/libnative_app_glue.a .out/native_app_glue.o
 
+# Copy the OpenXR loader to the staging area.
+
+cp $OPENXR_SDK/build/src/loader/libopenxr_loader.so .out/apk_stage/lib/$ABI
+
 # Copy over libc++_shared from NDK.
 
 cp $TOOLCHAIN_PATH/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so .out/apk_stage/lib/$ABI
