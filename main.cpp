@@ -517,7 +517,57 @@ void android_main(struct android_app* app) {
 		return;
 	}
 
-	XrSessionState session_state = XR_SESSION_STATE_UNKNOWN;
+	// Get view configurations.
+
+	uint32_t view_config_count = 0;
+
+	if (xrEnumerateViewConfigurations(inst, sys_id, 0, &view_config_count, nullptr) != XR_SUCCESS) {
+		LOGE("Couldn't enumerate view configurations.");
+		return;
+	}
+
+	auto view_configs = std::vector<XrViewConfigurationType>(view_config_count);
+
+	if (xrEnumerateViewConfigurations(inst, sys_id, view_config_count, &view_config_count, view_configs.data()) != XR_SUCCESS) {
+		LOGE("Couldn't enumerate view configurations.");
+		return;
+	}
+
+	XrViewConfigurationType view_config = XR_VIEW_CONFIGURATION_TYPE_MAX_ENUM;
+
+	for (auto& v : view_configs) {
+		LOGI("OpenXR runtime supports %d view configuration type.", v);
+
+		if (v == XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO) {
+			view_config = v;
+			break;
+		}
+	}
+
+	if (view_config == XR_VIEW_CONFIGURATION_TYPE_MAX_ENUM) {
+		LOGW("Couldn't find primary stereo view configuration type.");
+		return;
+	}
+
+	// Get view configuration views.
+
+	uint32_t view_config_view_count = 0;
+
+	if (xrEnumerateViewConfigurationViews(inst, sys_id, view_config, 0, &view_config_view_count, nullptr) != XR_SUCCESS) {
+		LOGW("Couldn't get configuration views.");
+		return;
+	}
+
+	auto view_config_views = std::vector<XrViewConfigurationView>(view_config_view_count);
+
+	if (xrEnumerateViewConfigurationViews(inst, sys_id, view_config, view_config_view_count, &view_config_view_count, view_config_views.data()) != XR_SUCCESS) {
+		LOGW("Couldn't get configuration views.");
+		return;
+	}
+
+	for (auto& v : view_config_views) {
+		LOGI("For our primary stereo view configuration type, OpenXR runtime supports a (recommended) %dx%d resolution view.", v.recommendedImageRectWidth, v.recommendedImageRectHeight);
+	}
 
 	// Starting from a saved state; restore it.
 
@@ -529,6 +579,7 @@ void android_main(struct android_app* app) {
 
 	bool running = true;
 	bool session_running = false;
+	XrSessionState session_state = XR_SESSION_STATE_UNKNOWN;
 
 	for (; running;) {
 		// Read Android events.
@@ -598,7 +649,7 @@ void android_main(struct android_app* app) {
 				case XR_SESSION_STATE_READY: {
 					XrSessionBeginInfo const session_begin_info = {
 						.type = XR_TYPE_SESSION_BEGIN_INFO,
-						.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
+						.primaryViewConfigurationType = view_config,
 					};
 
 					XrResult const res = xrBeginSession(session, &session_begin_info);
