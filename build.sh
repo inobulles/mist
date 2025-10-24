@@ -37,16 +37,17 @@ cp $TOOLCHAIN_PATH/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so .out/a
 # Build the program itself.
 # This is simply a shared library loaded presumably somewhere in the JVM.
 
-$CXX \
+intercept-build $CXX \
 	-Wall \
-	-I $NATIVE_APP_GLUE_PATH --sysroot=$TOOLCHAIN_PATH/sysroot \
+	-I $NATIVE_APP_GLUE_PATH -I $OPENXR_SDK/build/include \
+	--sysroot=$TOOLCHAIN_PATH/sysroot \
 	-fPIC \
 	-c main.cpp -o .out/main.o
 
 $CXX \
-	-I $NATIVE_APP_GLUE_PATH -L.out -shared \
+	-I $NATIVE_APP_GLUE_PATH -L.out/apk_stage/lib/$ABI -shared \
 	.out/main.o -o .out/apk_stage/lib/$ABI/libmain.so \
-	-llog -landroid -lEGL -lGLESv1_CM .out/native_app_glue.o
+	-llog -lopenxr_loader -landroid -lEGL -lGLESv1_CM .out/native_app_glue.o
 
 # Generate the APK.
 # keytool comes from jdk21-openjdk on Arch.

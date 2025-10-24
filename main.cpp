@@ -1,6 +1,5 @@
 #include <initializer_list>
 #include <jni.h>
-#include <errno.h>
 #include <string.h>
 #include <cassert>
 
@@ -10,6 +9,11 @@
 #include <android/sensor.h>
 #include <android/log.h>
 #include <android_native_app_glue.h>
+
+#define XR_USE_PLATFORM_ANDROID
+
+#include <openxr/openxr.h>
+#include <openxr/openxr_platform.h>
 
 #define LOGI(...) ((void)__android_log_print(ANDROID_LOG_INFO, "native-activity", __VA_ARGS__))
 #define LOGW(...) ((void)__android_log_print(ANDROID_LOG_WARN, "native-activity", __VA_ARGS__))
@@ -246,6 +250,37 @@ void android_main(struct android_app* state) {
 	state->onAppCmd = engine_handle_cmd;
 	state->onInputEvent = engine_handle_input;
 	engine.app = state;
+
+	// OpenXR setup.
+
+	PFN_xrInitializeLoaderKHR xrInitializeLoaderKHR = nullptr;
+
+	if (xrGetInstanceProcAddr(XR_NULL_HANDLE, "xrInitializeLoaderKHR", (PFN_xrVoidFunction*) &xrInitializeLoaderKHR) != XR_SUCCESS || xrInitializeLoaderKHR == nullptr) {
+		LOGW("Getting xrInitializeLoaderKHR failed.");
+		return;
+	}
+
+	XrLoaderInitInfoAndroidKHR loader_init_info{XR_TYPE_LOADER_INIT_INFO_ANDROID_KHR};
+
+	loader_init_info.applicationVM = state->activity->vm;
+	loader_init_info.applicationContext = state->activity->clazz;
+
+	if (xrInitializeLoaderKHR((XrLoaderInitInfoBaseHeaderKHR*) &loader_init_info) != XR_SUCCESS) {
+		LOGW("xrInitializeLoaderKHR failed.");
+		return;
+	}
+
+	XrInstanceCreateInfo info{XR_TYPE_INSTANCE_CREATE_INFO};
+	strcpy(info.applicationInfo.applicationName, "Mist");
+	info.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 0, 0); // Oculus Quest only supports OpenXR 1.0.0.
+
+	XrInstance instance = XR_NULL_HANDLE;
+	XrResult res = xrCreateInstance(&info, &instance);
+
+	if (res != XR_SUCCESS) {
+		LOGW("xrCreateInstance failed: %d", res);
+		return;
+	}
 
 	// Prepare to monitor accelerometer
 	engine.sensorManager = ASensorManager_getInstance();
