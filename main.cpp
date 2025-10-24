@@ -1,4 +1,3 @@
-#include <initializer_list>
 #include <jni.h>
 #include <string.h>
 #include <cassert>
@@ -55,7 +54,7 @@ static int engine_init_display(struct engine* engine) {
 	 * Below, we select an EGLConfig with at least 8 bits per color
 	 * component compatible with on-screen windows
 	 */
-	const EGLint attribs[] = {
+	const EGLint attrs[] = {
 			EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
 			EGL_BLUE_SIZE, 8,
 			EGL_GREEN_SIZE, 8,
@@ -75,10 +74,10 @@ static int engine_init_display(struct engine* engine) {
 	/* Here, the application chooses the configuration it desires.
 	 * find the best match if possible, otherwise use the very first one
 	 */
-	eglChooseConfig(display, attribs, nullptr,0, &numConfigs);
+	eglChooseConfig(display, attrs, nullptr,0, &numConfigs);
 	auto supportedConfigs = new EGLConfig[numConfigs];
 	assert(supportedConfigs);
-	eglChooseConfig(display, attribs, supportedConfigs, numConfigs, &numConfigs);
+	eglChooseConfig(display, attrs, supportedConfigs, numConfigs, &numConfigs);
 	assert(numConfigs);
 	auto i = 0;
 	for (; i < numConfigs; i++) {
@@ -225,28 +224,34 @@ static void engine_handle_cmd(struct android_app* app, int32_t cmd) {
  * android_native_app_glue.  It runs in its own thread, with its own
  * event loop for receiving input events and doing other things.
  */
-void android_main(struct android_app* state) {
+void android_main(struct android_app* app) {
+	// TODO Clean up the following code.
+
 	struct engine engine;
 
 	memset(&engine, 0, sizeof(engine));
-	state->userData = &engine;
-	state->onAppCmd = engine_handle_cmd;
-	state->onInputEvent = engine_handle_input;
-	engine.app = state;
+	app->userData = &engine;
+	// app->onAppCmd = engine_handle_cmd;
+	app->onInputEvent = engine_handle_input;
+	engine.app = app;
 
 	// Initialize OpenXR loader.
 
 	PFN_xrInitializeLoaderKHR xrInitializeLoaderKHR = nullptr;
 
-	if (xrGetInstanceProcAddr(XR_NULL_HANDLE, "xrInitializeLoaderKHR", (PFN_xrVoidFunction*) &xrInitializeLoaderKHR) != XR_SUCCESS || xrInitializeLoaderKHR == nullptr) {
+	if (
+		xrGetInstanceProcAddr(XR_NULL_HANDLE, "xrInitializeLoaderKHR", (PFN_xrVoidFunction*) &xrInitializeLoaderKHR) != XR_SUCCESS ||
+		xrInitializeLoaderKHR == nullptr
+	) {
 		LOGE("Getting xrInitializeLoaderKHR failed.");
 		return;
 	}
 
-	XrLoaderInitInfoAndroidKHR loader_init_info{XR_TYPE_LOADER_INIT_INFO_ANDROID_KHR};
-
-	loader_init_info.applicationVM = state->activity->vm;
-	loader_init_info.applicationContext = state->activity->clazz;
+	XrLoaderInitInfoAndroidKHR const loader_init_info = {
+		.type = XR_TYPE_LOADER_INIT_INFO_ANDROID_KHR,
+		.applicationVM = app->activity->vm,
+		.applicationContext = app->activity->clazz,
+	};
 
 	if (xrInitializeLoaderKHR((XrLoaderInitInfoBaseHeaderKHR*) &loader_init_info) != XR_SUCCESS) {
 		LOGE("xrInitializeLoaderKHR failed.");
@@ -287,13 +292,15 @@ void android_main(struct android_app* state) {
 
 	auto exts = std::vector<XrExtensionProperties>(ext_count, {XR_TYPE_EXTENSION_PROPERTIES});
 
-	XrResult rv = xrEnumerateInstanceExtensionProperties(nullptr, ext_count, &ext_count, exts.data());
-	if (rv != XR_SUCCESS) {
+	if (xrEnumerateInstanceExtensionProperties(nullptr, ext_count, &ext_count, exts.data()) != XR_SUCCESS) {
 		LOGE("Failed to enumerate extensions.");
 		return;
 	}
 
-	auto required_exts = std::vector{XR_EXT_DEBUG_UTILS_EXTENSION_NAME};
+	auto required_exts = std::vector{
+		XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME,
+		XR_EXT_DEBUG_UTILS_EXTENSION_NAME,
+	};
 
 	for (auto &ext : exts) {
 		LOGI("OpenXR runtime supports '%s' extension v%u.", ext.extensionName, ext.extensionVersion);
@@ -316,7 +323,7 @@ void android_main(struct android_app* state) {
 
 	// Actually create instance.
 
-	XrApplicationInfo app_info = {
+	XrApplicationInfo const app_info = {
 		.applicationName = "Mist",
 		.applicationVersion = 1,
 		.engineName = "OpenXR Engine",
@@ -324,15 +331,15 @@ void android_main(struct android_app* state) {
 		.apiVersion = XR_MAKE_VERSION(1, 0, 0), // Oculus Quest only supports OpenXR 1.0.0.
 	};
 
-	XrInstanceCreateInfo info = {XR_TYPE_INSTANCE_CREATE_INFO};
+	XrInstanceCreateInfo const info = {
+		.type = XR_TYPE_INSTANCE_CREATE_INFO,
+		.applicationInfo = app_info,
+		.enabledExtensionCount = static_cast<uint32_t>(required_exts.size()),
+		.enabledExtensionNames = required_exts.data(),
+	};
 
-	info.applicationInfo = app_info;
-	info.enabledApiLayerCount = 0;
-	info.enabledExtensionCount = required_exts.size();
-	info.enabledExtensionNames = required_exts.data();
-
-	XrInstance instance = XR_NULL_HANDLE;
-	XrResult res = xrCreateInstance(&info, &instance);
+	XrInstance inst = XR_NULL_HANDLE;
+	XrResult const res = xrCreateInstance(&info, &inst);
 
 	if (res != XR_SUCCESS) {
 		LOGE("xrCreateInstance failed: %d", res);
@@ -341,11 +348,10 @@ void android_main(struct android_app* state) {
 
 	// Get the instance properties.
 
-	XrInstanceProperties instance_props{XR_TYPE_INSTANCE_PROPERTIES};
+	XrInstanceProperties instance_props = {XR_TYPE_INSTANCE_PROPERTIES};
 
-	if (xrGetInstanceProperties(instance, &instance_props) != XR_SUCCESS) {
-		LOGE("xrGetInstanceProperties failed.\n");
-		goto err_xrGetInstanceProperties;
+	if (xrGetInstanceProperties(inst, &instance_props) != XR_SUCCESS) {
+		return;
 	}
 
 	LOGI("OpenXR runtime: %s %d.%d.%d",
@@ -355,11 +361,178 @@ void android_main(struct android_app* state) {
 		XR_VERSION_PATCH(instance_props.runtimeVersion)
 	);
 
-	// TODO At this point, we need to start looking into setting up the debug utils extension and session creation.
+	// TODO Set up XR_EXT_debug_utils.
+	// See the OpenXR-Tutorials/Common/OpenXRDebugUtils.h file.
 
-	if (state->savedState != NULL) {
+	// Get system info.
+
+	XrSystemGetInfo const sys_get_info = {
+		.type = XR_TYPE_SYSTEM_GET_INFO,
+		.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY,
+	};
+
+	XrSystemId sys_id;
+
+	if (xrGetSystem(inst, &sys_get_info, &sys_id) != XR_SUCCESS) {
+		return;
+	}
+
+	XrSystemProperties sys_props = {XR_TYPE_SYSTEM_PROPERTIES};
+
+	if (xrGetSystemProperties(inst, sys_id, &sys_props) != XR_SUCCESS) {
+		return;
+	}
+
+	LOGI("System name: %s (vendor 0x%x)", sys_props.systemName, sys_props.vendorId);
+
+	// Get OpenXR's OpenGL ES graphics API requirements.
+
+	PFN_xrGetOpenGLESGraphicsRequirementsKHR xrGetOpenGLESGraphicsRequirementsKHR;
+
+	if (
+		xrGetInstanceProcAddr(inst, "xrGetOpenGLESGraphicsRequirementsKHR", (PFN_xrVoidFunction*) &xrGetOpenGLESGraphicsRequirementsKHR) != XR_SUCCESS ||
+		xrGetOpenGLESGraphicsRequirementsKHR == nullptr
+	) {
+		LOGE("Failed to get xrGetOpenGLESGraphicsRequirementsKHR.");
+		return;
+	}
+
+	XrGraphicsRequirementsOpenGLESKHR graphics_requirements = {XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_ES_KHR};
+
+	if (xrGetOpenGLESGraphicsRequirementsKHR(inst, sys_id, &graphics_requirements) != XR_SUCCESS) {
+		LOGE("Failed to call xrGetOpenGLESGraphicsRequirementsKHR.");
+		return;
+	}
+
+	LOGI("OpenXR OpenGL ES graphics API requirements: min %u.%u.%u, max %u.%u.%u",
+		XR_VERSION_MAJOR(graphics_requirements.minApiVersionSupported),
+		XR_VERSION_MINOR(graphics_requirements.minApiVersionSupported),
+		XR_VERSION_PATCH(graphics_requirements.minApiVersionSupported),
+		XR_VERSION_MAJOR(graphics_requirements.maxApiVersionSupported),
+		XR_VERSION_MINOR(graphics_requirements.maxApiVersionSupported),
+		XR_VERSION_PATCH(graphics_requirements.maxApiVersionSupported)
+	);
+
+	// Initialize EGL.
+
+	EGLDisplay const display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+
+	if (display == EGL_NO_DISPLAY) {
+		LOGE("Couldn't get EGL display.");
+		return;
+	}
+
+	EGLint egl_major, egl_minor;
+
+	if (eglInitialize(display, &egl_major, &egl_minor) != EGL_TRUE) {
+		LOGE("Couldn't initialize EGL.");
+		return;
+	}
+
+	LOGI("Initialized EGL %d.%d\n", egl_major, egl_minor);
+
+	// Find a suitable config.
+	// Note that we don't really want to use multisampling here, as that would be completely wasted by composition and timewarping.
+	// This is also why we don't use eglChooseConfig; on Android, if "force 4x MSAA" is set, only configs with 4x MSAA will be shown to us.
+	// Some of this code comes from OpenXR's gfxwrapper_opengl.
+
+	EGLint config_count = 0;
+
+	if (eglGetConfigs(display, nullptr, 0, &config_count) != EGL_TRUE) {
+		LOGE("Couldn't get EGL configs.");
+		return;
+	}
+
+	auto configs = std::vector<EGLConfig>(config_count);
+
+	if (eglGetConfigs(display, configs.data(), config_count, &config_count) != EGL_TRUE) {
+		LOGE("Couldn't get EGL configs.");
+		return;
+	}
+
+	EGLConfig selected_config = nullptr;
+
+	for (auto config : configs) {
+		EGLint value = 0;
+		eglGetConfigAttrib(display, config, EGL_RENDERABLE_TYPE, &value);
+
+		if ((value & EGL_OPENGL_ES3_BIT) != EGL_OPENGL_ES3_BIT) {
+			continue;
+		}
+
+		// Without EGL_KHR_surfaceless_context, the config needs to support both pbuffers and window surfaces.
+
+		eglGetConfigAttrib(display, config, EGL_SURFACE_TYPE, &value);
+
+		if ((value & (EGL_WINDOW_BIT | EGL_PBUFFER_BIT)) != (EGL_WINDOW_BIT | EGL_PBUFFER_BIT)) {
+			continue;
+		}
+
+		selected_config = config;
+	}
+
+	if (selected_config == nullptr) {
+		LOGE("Couldn't find a suitable EGL config.");
+		return;
+	}
+
+	// Create an EGL context.
+
+	EGLint const context_attrs[] = {
+		EGL_CONTEXT_CLIENT_VERSION, XR_VERSION_MAJOR(graphics_requirements.maxApiVersionSupported),
+		// EGL_CONTEXT_PRIORITY_LEVEL_IMG, EGL_CONTEXT_PRIORITY_LOW_IMG,
+		EGL_NONE,
+	};
+
+	EGLContext const context = eglCreateContext(display, selected_config, EGL_NO_CONTEXT, context_attrs);
+
+	if (context == EGL_NO_CONTEXT) {
+		LOGE("Couldn't create EGL context.");
+		return;
+	}
+
+	// Create an EGL surface.
+
+	EGLint const surf_attrs[] = {
+		EGL_WIDTH, 16,
+		EGL_HEIGHT, 16,
+		EGL_NONE,
+	};
+
+	EGLSurface const tiny_surf = eglCreatePbufferSurface(display, selected_config, surf_attrs);
+
+	if (tiny_surf == EGL_NO_SURFACE) {
+		LOGE("Couldn't create tiny EGL surface.");
+		return;
+	}
+
+	// Create an OpenXR session.
+
+	XrGraphicsBindingOpenGLESAndroidKHR const graphics_binding = {
+		.type = XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR,
+		.display = display,
+		.config = selected_config,
+		.context = context,
+	};
+
+	XrSessionCreateInfo const session_create_info = {
+		.type = XR_TYPE_SESSION_CREATE_INFO,
+		.next = &graphics_binding,
+		.createFlags = 0,
+		.systemId = sys_id,
+	};
+
+	XrSession session;
+
+	if (xrCreateSession(inst, &session_create_info, &session) != XR_SUCCESS) {
+		return;
+	}
+
+	// TODO Clean up the following code.
+
+	if (app->savedState != NULL) {
 		// We are starting with a previous saved state; restore from it.
-		engine.state = *(struct saved_state*)state->savedState;
+		engine.state = *(struct saved_state*)app->savedState;
 	}
 
 	// loop waiting for stuff to do.
@@ -378,11 +551,11 @@ void android_main(struct android_app* state) {
 
 			// Process this event.
 			if (source != NULL) {
-				source->process(state, source);
+				source->process(app, source);
 			}
 
 			// Check if we are exiting.
-			if (state->destroyRequested != 0) {
+			if (app->destroyRequested != 0) {
 				engine_term_display(&engine);
 				return;
 			}
@@ -403,7 +576,6 @@ void android_main(struct android_app* state) {
 
 	// Cleanup.
 
-err_xrGetInstanceProperties:
-
-	xrDestroyInstance(instance);
+	xrDestroySession(session);
+	xrDestroyInstance(inst);
 }
