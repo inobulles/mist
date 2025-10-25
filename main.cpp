@@ -464,7 +464,7 @@ void android_main(struct android_app* app) {
 		return;
 	}
 
-	auto view_config_views = std::vector<XrViewConfigurationView>(view_config_view_count);
+	auto view_config_views = std::vector<XrViewConfigurationView>(view_config_view_count, {XR_TYPE_VIEW_CONFIGURATION_VIEW});
 
 	if (xrEnumerateViewConfigurationViews(inst, sys_id, view_config, view_config_view_count, &view_config_view_count, view_config_views.data()) != XR_SUCCESS) {
 		LOGW("Couldn't get configuration views.");
@@ -588,7 +588,6 @@ void android_main(struct android_app* app) {
 					session_running = false;
 					running = false;
 					break;
-
 				default:
 					break;
 				}
