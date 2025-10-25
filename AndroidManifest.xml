@@ -6,7 +6,8 @@
 	android:versionCode="1"
 	android:versionName="1.0"
 >
-	<uses-sdk android:minSdkVersion="24" android:targetSdkVersion="31" />
+	<!-- Android SDK 28 is the last version which allows us to execute arbitrary binaries. -->
+	<uses-sdk android:minSdkVersion="24" android:targetSdkVersion="28" />
 
 	<!-- Require OpenGL ES 3.2 support. -->
 	<uses-feature
