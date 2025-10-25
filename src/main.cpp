@@ -673,15 +673,15 @@ void android_main(struct android_app* app) {
 
 		uint32_t colour_image_count = 0;
 		assert(xrEnumerateSwapchainImages(colour_swapchain.swapchain, 0, &colour_image_count, nullptr) == XR_SUCCESS);
-		auto colour_images = std::vector<XrSwapchainImageBaseHeader>(colour_image_count, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR});
-		assert(xrEnumerateSwapchainImages(colour_swapchain.swapchain, colour_image_count, &colour_image_count, colour_images.data()) == XR_SUCCESS);
+		auto colour_images = std::vector<XrSwapchainImageOpenGLESKHR>(colour_image_count, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR});
+		assert(xrEnumerateSwapchainImages(colour_swapchain.swapchain, colour_image_count, &colour_image_count, (XrSwapchainImageBaseHeader*) colour_images.data()) == XR_SUCCESS);
 
 		// Get the depth swapchain images.
 
 		uint32_t depth_image_count = 0;
 		assert(xrEnumerateSwapchainImages(depth_swapchain.swapchain, 0, &depth_image_count, nullptr) == XR_SUCCESS);
-		auto depth_images = std::vector<XrSwapchainImageBaseHeader>(depth_image_count, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR});
-		assert(xrEnumerateSwapchainImages(depth_swapchain.swapchain, depth_image_count, &depth_image_count, depth_images.data()) == XR_SUCCESS);
+		auto depth_images = std::vector<XrSwapchainImageOpenGLESKHR>(depth_image_count, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR});
+		assert(xrEnumerateSwapchainImages(depth_swapchain.swapchain, depth_image_count, &depth_image_count, (XrSwapchainImageBaseHeader*) depth_images.data()) == XR_SUCCESS);
 	}
 
 	// Starting from a saved state; restore it.
