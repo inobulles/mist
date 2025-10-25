@@ -66,13 +66,15 @@ cp $AQUA/gv/.bob/prefix/lib/libvdriver_loader.so assets/lib
 # Generate the APK.
 # keytool comes from jdk21-openjdk on Arch.
 
-# keytool \
-# 	-genkeypair \
-# 	-validity 1000 -keyalg RSA \
-# 	-dname "CN=Inobulles,O=Android,C=BE" \
-# 	-keystore .out/debug.keystore \
-# 	-storepass 123456 -keypass 123456 \
-# 	-alias MistKey || true
+if [ ! -f .out/debug.keystore ]; then
+	keytool \
+		-genkeypair \
+		-validity 1000 -keyalg RSA \
+		-dname "CN=Inobulles,O=Android,C=BE" \
+		-keystore .out/debug.keystore \
+		-storepass 123456 -keypass 123456 \
+		-alias MistKey || true
+fi
 
 # This LD_PRELOAD exists for when running on FreeBSD.
 
