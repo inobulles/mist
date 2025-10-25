@@ -2,6 +2,7 @@
 set -e
 
 # TODO I would like an Android class or something for Bob the Builder. That would be pretty cool.
+# This script also works on FreeBSD through the Linuxulator (I know :o).
 
 . ./config.sh
 
@@ -20,6 +21,7 @@ AR=$TOOLCHAIN_PATH/bin/llvm-ar
 AAPT=$BUILD_TOOLS_PATH/aapt
 APKSIGNER=$BUILD_TOOLS_PATH/apksigner
 ZIPALIGN=$BUILD_TOOLS_PATH/zipalign
+# INTERCEPT_BUILD=intercept-build
 
 # Build the native app glue static library from the NDK.
 
@@ -37,7 +39,7 @@ cp $TOOLCHAIN_PATH/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so .out/a
 # Build the program itself.
 # This is simply a shared library loaded presumably somewhere in the JVM.
 
-intercept-build $CXX \
+$INTERCEPT_BUILD $CXX \
 	-Wall \
 	-I $NATIVE_APP_GLUE_PATH -I $OPENXR_SDK/build/include \
 	--sysroot=$TOOLCHAIN_PATH/sysroot \
@@ -52,13 +54,15 @@ $CXX \
 # Generate the APK.
 # keytool comes from jdk21-openjdk on Arch.
 
-keytool \
-	-genkeypair \
-	-validity 1000 -keyalg RSA \
-	-dname "CN=Inobulles,O=Android,C=BE" \
-	-keystore .out/debug.keystore \
-	-storepass 123456 -keypass 123456 \
-	-alias MistKey || true
+# keytool \
+# 	-genkeypair \
+# 	-validity 1000 -keyalg RSA \
+# 	-dname "CN=Inobulles,O=Android,C=BE" \
+# 	-keystore .out/debug.keystore \
+# 	-storepass 123456 -keypass 123456 \
+# 	-alias MistKey || true
 
-$AAPT package -f -M AndroidManifest.xml -I $PLATFORM_PATH/android.jar -F .out/Mist.apk .out/apk_stage
+# This LD_PRELOAD exists for when running on FreeBSD.
+
+LD_PRELOAD=$BUILD_TOOLS_PATH/lib64/libc++.so $AAPT package -f -M AndroidManifest.xml -I $PLATFORM_PATH/android.jar -F .out/Mist.apk .out/apk_stage
 $APKSIGNER sign --ks .out/debug.keystore --ks-pass pass:123456 .out/Mist.apk
