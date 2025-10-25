@@ -14,10 +14,14 @@ cmake \
 	-DANDROID_ABI=$ABI \
 	-DANDROID_PLATFORM=$PLATFORM \
 	-DBUILD_LOADER=ON \
-	-DBUILD_API_LAYERS=OFF \
+	-DBUILD_API_LAYERS=ON \
 	-DBUILD_CONFORMANCE_TESTS=OFF \
 	-DBUILD_WITH_ANDROID=ON \
 	..
 
 make -j$(nproc) openxr_loader
+make -j$(nproc) XrApiLayer_api_dump
+make -j$(nproc) XrApiLayer_best_practices_validation
+make -j$(nproc) XrApiLayer_core_validation
+
 popd

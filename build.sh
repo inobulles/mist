@@ -32,6 +32,11 @@ $AR rcs .out/libnative_app_glue.a .out/native_app_glue.o
 
 cp $OPENXR_SDK/build/src/loader/libopenxr_loader.so .out/apk_stage/lib/$ABI
 
+# Copy the OpenXR API layers to the staging area.
+
+cp $OPENXR_SDK/build/src/api_layers/libXrApiLayer_* .out/apk_stage/lib/$ABI
+cp $OPENXR_SDK/build/src/api_layers/XrApiLayer_*.json assets/openxr/1/api_layers/explicit.d
+
 # Copy over libc++_shared from NDK.
 
 cp $TOOLCHAIN_PATH/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so .out/apk_stage/lib/$ABI
@@ -68,5 +73,8 @@ $CXX \
 
 # This LD_PRELOAD exists for when running on FreeBSD.
 
-LD_PRELOAD=$BUILD_TOOLS_PATH/lib64/libc++.so $AAPT package -f -M AndroidManifest.xml -I $PLATFORM_PATH/android.jar -F .out/Mist.apk .out/apk_stage
+LD_PRELOAD=$BUILD_TOOLS_PATH/lib64/libc++.so $AAPT package -f \
+	-M AndroidManifest.xml -I $PLATFORM_PATH/android.jar -A assets \
+	-F .out/Mist.apk .out/apk_stage
+
 $APKSIGNER sign --ks .out/debug.keystore --ks-pass pass:123456 .out/Mist.apk

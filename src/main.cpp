@@ -210,14 +210,38 @@ void android_main(struct android_app* app) {
 	}
 
 	auto api_layers = std::vector<XrApiLayerProperties>(api_layer_count, {XR_TYPE_API_LAYER_PROPERTIES});
+	std::vector<char const*> selected_api_layers;
 
 	if (xrEnumerateApiLayerProperties(api_layer_count, &api_layer_count, api_layers.data()) != XR_SUCCESS) {
 		LOGE("Failed to enumerate API layers.");
 		return;
 	}
 
+	auto wanted_api_layers = {
+		// "XR_APILAYER_LUNARG_api_dump",
+		"XR_APILAYER_KHRONOS_best_practices_validation",
+		"XR_APILAYER_LUNARG_core_validation",
+	};
+
 	for (auto& api_layer : api_layers) {
-		LOGI("OpenXR runtime supports '%s' API layer v%lu.", api_layer.layerName, api_layer.specVersion);
+		LOGI(
+			"OpenXR runtime supports '%s' API layer %u.%u.%u.",
+			api_layer.layerName,
+			XR_VERSION_MAJOR(api_layer.specVersion),
+			XR_VERSION_MINOR(api_layer.specVersion),
+			XR_VERSION_PATCH(api_layer.specVersion)
+		);
+
+		for (auto& wanted : wanted_api_layers) {
+			if (strcmp(api_layer.layerName, wanted) != 0) {
+				continue;
+			}
+
+			LOGI("Selected '%s' OpenXR API layer.", api_layer.layerName);
+			selected_api_layers.push_back(api_layer.layerName);
+
+			break;
+		}
 	}
 
 	// Enumerate extensions runtime has made available.
@@ -228,8 +252,6 @@ void android_main(struct android_app* app) {
 		LOGE("Failed to enumerate extensions.");
 		return;
 	}
-
-	LOGI("extension count: %d", ext_count);
 
 	auto exts = std::vector<XrExtensionProperties>(ext_count, {XR_TYPE_EXTENSION_PROPERTIES});
 
@@ -275,6 +297,8 @@ void android_main(struct android_app* app) {
 	XrInstanceCreateInfo const info = {
 		.type = XR_TYPE_INSTANCE_CREATE_INFO,
 		.applicationInfo = app_info,
+		.enabledApiLayerCount = static_cast<uint32_t>(selected_api_layers.size()),
+		.enabledApiLayerNames = selected_api_layers.data(),
 		.enabledExtensionCount = static_cast<uint32_t>(required_exts.size()),
 		.enabledExtensionNames = required_exts.data(),
 	};
