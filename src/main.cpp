@@ -2,9 +2,8 @@
 #include <jni.h>
 #include <string.h>
 
+#include <glad/gles2.h>
 #include <EGL/egl.h>
-#include <GLES/gl.h>
-#include <glad/glad.h>
 
 #include <android/log.h>
 #include <android_native_app_glue.h>
@@ -401,6 +400,29 @@ void android_main(struct android_app* app) {
 		LOGE("Couldn't create tiny EGL surface.");
 		return;
 	}
+
+	// Make EGL surface and context current.
+
+	if (eglMakeCurrent(display, tiny_surf, tiny_surf, context) != EGL_TRUE) {
+		LOGE("Couldn't make EGL surface and context current.");
+		return;
+	}
+
+	// Load GLES2 with Glad.
+
+	int const version = gladLoadGLES2(eglGetProcAddress);
+
+	if (version <= 0) {
+		LOGE("Couldn't load GLES2 (with Glad): %d", version);
+		return;
+	}
+
+	LOGI("Glad loaded OpenGL ES version %d.%d.", GLAD_VERSION_MAJOR(version), GLAD_VERSION_MINOR(version));
+
+	LOGI("OpenGL ES vendor: %s.", glGetString(GL_VENDOR));
+	LOGI("OpenGL ES version: %s.", glGetString(GL_VERSION));
+	LOGI("OpenGL ES renderer: %s.", glGetString(GL_RENDERER));
+	LOGI("OpenGL ES shading language version: %s.", glGetString(GL_SHADING_LANGUAGE_VERSION));
 
 	// Create an OpenXR session.
 

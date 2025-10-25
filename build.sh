@@ -41,14 +41,18 @@ cp $TOOLCHAIN_PATH/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so .out/a
 
 $INTERCEPT_BUILD $CXX \
 	-Wall \
-	-I$NATIVE_APP_GLUE_PATH -I$OPENXR_SDK/build/include -Isrc/include \
+	-I$NATIVE_APP_GLUE_PATH -I$OPENXR_SDK/build/include -Isrc/glad/include \
 	--sysroot=$TOOLCHAIN_PATH/sysroot \
 	-fPIC \
 	-c src/main.cpp -o .out/main.o
 
+if [ ! -f .out/glad.o ]; then
+	$CC -Isrc/glad/include -fPIC -c src/glad/src/gles2.c -o .out/glad.o
+fi
+
 $CXX \
 	-I $NATIVE_APP_GLUE_PATH -L.out/apk_stage/lib/$ABI -shared \
-	.out/main.o -o .out/apk_stage/lib/$ABI/libmain.so \
+	.out/main.o .out/glad.o -o .out/apk_stage/lib/$ABI/libmain.so \
 	-llog -lopenxr_loader -landroid -lEGL -lGLESv1_CM .out/native_app_glue.o
 
 # Generate the APK.
