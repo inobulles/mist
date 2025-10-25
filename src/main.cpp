@@ -682,6 +682,32 @@ void android_main(struct android_app* app) {
 		assert(xrEnumerateSwapchainImages(depth_swapchain.swapchain, 0, &depth_image_count, nullptr) == XR_SUCCESS);
 		auto depth_images = std::vector<XrSwapchainImageOpenGLESKHR>(depth_image_count, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR});
 		assert(xrEnumerateSwapchainImages(depth_swapchain.swapchain, depth_image_count, &depth_image_count, (XrSwapchainImageBaseHeader*) depth_images.data()) == XR_SUCCESS);
+
+		// Create framebuffers for colour swapchain images.
+
+		for (auto& image : colour_images) {
+			GLuint framebuffer = 0;
+			glGenFramebuffers(1, &framebuffer);
+			glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+
+			// XXX When we move on to using multiview, we should use glFramebufferTextureMultiviewOVR here.
+
+			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, (GLuint) image.image, 0);
+			assert(glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+		}
+
+		// Create framebuffers for depth swapchain images.
+
+		for (auto& image : depth_images) {
+			GLuint framebuffer = 0;
+			glGenFramebuffers(1, &framebuffer);
+			glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+
+			// XXX When we move on to using multiview, we should use glFramebufferTextureMultiviewOVR here.
+
+			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, (GLuint) image.image, 0);
+			assert(glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+		}
 	}
 
 	// Starting from a saved state; restore it.
