@@ -1,3 +1,5 @@
 .out
 .cache
 compile_commands.json
+assets/bin
+assets/lib
