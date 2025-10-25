@@ -44,7 +44,7 @@ $INTERCEPT_BUILD $CXX \
 	-I $NATIVE_APP_GLUE_PATH -I $OPENXR_SDK/build/include \
 	--sysroot=$TOOLCHAIN_PATH/sysroot \
 	-fPIC \
-	-c main.cpp -o .out/main.o
+	-c src/main.cpp -o .out/main.o
 
 $CXX \
 	-I $NATIVE_APP_GLUE_PATH -L.out/apk_stage/lib/$ABI -shared \
