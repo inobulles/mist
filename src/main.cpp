@@ -15,106 +15,14 @@
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
-#define LOGI(...) ((void) __android_log_print(ANDROID_LOG_INFO, "native-activity", __VA_ARGS__))
-#define LOGW(...) ((void) __android_log_print(ANDROID_LOG_WARN, "native-activity", __VA_ARGS__))
-#define LOGE(...) ((void) __android_log_print(ANDROID_LOG_ERROR, "native-activity", __VA_ARGS__))
+#define LOGI(...) ((void) __android_log_print(ANDROID_LOG_INFO, "mist", __VA_ARGS__))
+#define LOGW(...) ((void) __android_log_print(ANDROID_LOG_WARN, "mist", __VA_ARGS__))
+#define LOGE(...) ((void) __android_log_print(ANDROID_LOG_ERROR, "mist", __VA_ARGS__))
 
 typedef struct {
-	float angle;
-	int32_t x;
-	int32_t y;
-} state_t;
-
-/**
- * Shared state for our app.
- */
-struct engine {
 	struct android_app* app;
-
-	int animating;
-	EGLDisplay display;
-	EGLSurface surface;
-	EGLContext context;
-	int32_t width;
-	int32_t height;
-	state_t state;
-};
-
-/**
- * Just the current frame in the display.
- */
-static void engine_draw_frame(struct engine* engine) {
-	if (engine->display == NULL) {
-		// No display.
-		return;
-	}
-
-	// Just fill the screen with a color.
-	glClearColor(((float) engine->state.x) / engine->width, engine->state.angle, ((float) engine->state.y) / engine->height, 1);
-	glClear(GL_COLOR_BUFFER_BIT);
-
-	eglSwapBuffers(engine->display, engine->surface);
-}
-
-/**
- * Tear down the EGL context currently associated with the display.
- */
-static void engine_term_display(struct engine* engine) {
-	if (engine->display != EGL_NO_DISPLAY) {
-		eglMakeCurrent(engine->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-		if (engine->context != EGL_NO_CONTEXT) {
-			eglDestroyContext(engine->display, engine->context);
-		}
-		if (engine->surface != EGL_NO_SURFACE) {
-			eglDestroySurface(engine->display, engine->surface);
-		}
-		eglTerminate(engine->display);
-	}
-	engine->animating = 0;
-	engine->display = EGL_NO_DISPLAY;
-	engine->context = EGL_NO_CONTEXT;
-	engine->surface = EGL_NO_SURFACE;
-}
-
-/**
- * Process the next input event.
- */
-static int32_t engine_handle_input(struct android_app* app, AInputEvent* event) {
-	struct engine* engine = (struct engine*) app->userData;
-	if (AInputEvent_getType(event) == AINPUT_EVENT_TYPE_MOTION) {
-		engine->animating = 1;
-		engine->state.x = AMotionEvent_getX(event, 0);
-		engine->state.y = AMotionEvent_getY(event, 0);
-		return 1;
-	}
-	return 0;
-}
-
-/**
- * Process the next main command.
- */
-static void engine_handle_cmd(struct android_app* app, int32_t cmd) {
-	struct engine* engine = (struct engine*) app->userData;
-	switch (cmd) {
-	case APP_CMD_SAVE_STATE:
-		// The system has asked us to save our current state.  Do so.
-		engine->app->savedState = malloc(sizeof engine->state);
-		*((state_t*) engine->app->savedState) = engine->state;
-		engine->app->savedStateSize = sizeof engine->state;
-		break;
-	case APP_CMD_TERM_WINDOW:
-		// The window is being hidden or closed, clean it up.
-		engine_term_display(engine);
-		break;
-	case APP_CMD_GAINED_FOCUS:
-		break;
-	case APP_CMD_LOST_FOCUS:
-		// Also stop animating.
-		engine->animating = 0;
-		engine_draw_frame(engine);
-		break;
-	}
-}
+	XrSession session;
+} state_t;
 
 XrBool32 debug_utils_messenger_cb(
 	XrDebugUtilsMessageSeverityFlagsEXT severity,
@@ -160,21 +68,13 @@ XrBool32 debug_utils_messenger_cb(
 	return XrBool32();
 }
 
-/**
- * This is the main entry point of a native application that is using
- * android_native_app_glue.  It runs in its own thread, with its own
- * event loop for receiving input events and doing other things.
- */
+static void render(state_t* s) {
+	(void) s;
+}
+
 void android_main(struct android_app* app) {
-	// TODO Clean up the following code.
-
-	struct engine engine;
-
-	memset(&engine, 0, sizeof(engine));
-	app->userData = &engine;
-	app->onAppCmd = engine_handle_cmd;
-	app->onInputEvent = engine_handle_input;
-	engine.app = app;
+	state_t s = {};
+	app->userData = &s;
 
 	// Initialize OpenXR loader.
 
@@ -538,9 +438,7 @@ void android_main(struct android_app* app) {
 		.systemId = sys_id,
 	};
 
-	XrSession session;
-
-	if (xrCreateSession(inst, &session_create_info, &session) != XR_SUCCESS) {
+	if (xrCreateSession(inst, &session_create_info, &s.session) != XR_SUCCESS) {
 		return;
 	}
 
@@ -600,14 +498,14 @@ void android_main(struct android_app* app) {
 
 	uint32_t format_count = 0;
 
-	if (xrEnumerateSwapchainFormats(session, 0, &format_count, nullptr) != XR_SUCCESS) {
+	if (xrEnumerateSwapchainFormats(s.session, 0, &format_count, nullptr) != XR_SUCCESS) {
 		LOGW("Couldn't get swapchain formats.");
 		return;
 	}
 
 	auto formats = std::vector<int64_t>(format_count);
 
-	if (xrEnumerateSwapchainFormats(session, format_count, &format_count, formats.data()) != XR_SUCCESS) {
+	if (xrEnumerateSwapchainFormats(s.session, format_count, &format_count, formats.data()) != XR_SUCCESS) {
 		LOGW("Couldn't get swapchain formats.");
 		return;
 	}
@@ -647,7 +545,7 @@ void android_main(struct android_app* app) {
 			.mipCount = 1,
 		};
 
-		assert(xrCreateSwapchain(session, &colour_create_info, &colour_swapchain.swapchain) == XR_SUCCESS);
+		assert(xrCreateSwapchain(s.session, &colour_create_info, &colour_swapchain.swapchain) == XR_SUCCESS);
 
 		// Depth swapchain.
 
@@ -667,7 +565,7 @@ void android_main(struct android_app* app) {
 			.mipCount = 1,
 		};
 
-		assert(xrCreateSwapchain(session, &depth_create_info, &depth_swapchain.swapchain) == XR_SUCCESS);
+		assert(xrCreateSwapchain(s.session, &depth_create_info, &depth_swapchain.swapchain) == XR_SUCCESS);
 
 		// Get the colour swapchain images.
 
@@ -752,15 +650,9 @@ void android_main(struct android_app* app) {
 
 	XrSpace ref_space;
 
-	if (xrCreateReferenceSpace(session, &ref_space_create, &ref_space) != XR_SUCCESS) {
+	if (xrCreateReferenceSpace(s.session, &ref_space_create, &ref_space) != XR_SUCCESS) {
 		LOGE("Failed to create OpenXR local reference space.");
 		return;
-	}
-
-	// Starting from a saved state; restore it.
-
-	if (app->savedState != NULL) {
-		engine.state = *(state_t*) app->savedState;
 	}
 
 	// Main loop.
@@ -771,7 +663,6 @@ void android_main(struct android_app* app) {
 	bool session_running = false;
 	XrSessionState session_state = XR_SESSION_STATE_UNKNOWN;
 
-	(void) session_running;
 	(void) session_state;
 
 	for (; running;) {
@@ -814,7 +705,7 @@ void android_main(struct android_app* app) {
 				XrEventDataInteractionProfileChanged* const interaction_profile_change = reinterpret_cast<XrEventDataInteractionProfileChanged*>(&event);
 				LOGI("Interaction profile changed for our OpenXR session.");
 
-				if (interaction_profile_change->session != session) {
+				if (interaction_profile_change->session != s.session) {
 					LOGW("Interaction profile changed for unknown OpenXR session %p.", interaction_profile_change->session);
 				}
 
@@ -824,7 +715,7 @@ void android_main(struct android_app* app) {
 				XrEventDataReferenceSpaceChangePending* const ref_space_change_pending = reinterpret_cast<XrEventDataReferenceSpaceChangePending*>(&event);
 				LOGI("Reference space change pending for our OpenXR session.");
 
-				if (ref_space_change_pending->session != session) {
+				if (ref_space_change_pending->session != s.session) {
 					LOGW("Reference space change pending for unknown OpenXR session %p.", ref_space_change_pending->session);
 				}
 
@@ -833,7 +724,7 @@ void android_main(struct android_app* app) {
 			case XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED: {
 				XrEventDataSessionStateChanged* const session_state_change = reinterpret_cast<XrEventDataSessionStateChanged*>(&event);
 
-				if (session_state_change->session != session) {
+				if (session_state_change->session != s.session) {
 					LOGW("State changed for unknown OpenXR session %p.", session_state_change->session);
 					break;
 				}
@@ -845,7 +736,7 @@ void android_main(struct android_app* app) {
 						.primaryViewConfigurationType = view_config,
 					};
 
-					XrResult const res = xrBeginSession(session, &session_begin_info);
+					XrResult const res = xrBeginSession(s.session, &session_begin_info);
 
 					if (res != XR_SUCCESS) {
 						LOGW("xrBeginSession failed: %d.", res);
@@ -858,7 +749,7 @@ void android_main(struct android_app* app) {
 					break;
 				}
 				case XR_SESSION_STATE_STOPPING: {
-					XrResult const res = xrEndSession(session);
+					XrResult const res = xrEndSession(s.session);
 
 					if (res != XR_SUCCESS) {
 						LOGW("xrEndSession failed: %d.", res);
@@ -885,10 +776,16 @@ void android_main(struct android_app* app) {
 			default:;
 			}
 		}
+
+		// Render.
+
+		if (session_running) {
+			render(&s);
+		}
 	}
 
 	// Cleanup.
 
-	xrDestroySession(session);
+	xrDestroySession(s.session);
 	xrDestroyInstance(inst);
 }
