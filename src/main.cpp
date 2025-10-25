@@ -24,7 +24,7 @@ typedef struct {
 	XrEnvironmentBlendMode env_blend_mode;
 } state_t;
 
-XrBool32 debug_utils_messenger_cb(
+static XrBool32 debug_utils_messenger_cb(
 	XrDebugUtilsMessageSeverityFlagsEXT severity,
 	XrDebugUtilsMessageTypeFlagsEXT type,
 	XrDebugUtilsMessengerCallbackDataEXT const* data,
@@ -66,6 +66,59 @@ XrBool32 debug_utils_messenger_cb(
 	}
 
 	return XrBool32();
+}
+
+static void gl_debug_cb(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, GLchar const* message, void const* userParam) {
+	char const* src_str = "Unknown";
+
+	switch (source) {
+	case GL_DEBUG_SOURCE_API:             src_str = "API"; break;
+	case GL_DEBUG_SOURCE_WINDOW_SYSTEM:   src_str = "Window System"; break;
+	case GL_DEBUG_SOURCE_SHADER_COMPILER: src_str = "Shader Compiler"; break;
+	case GL_DEBUG_SOURCE_THIRD_PARTY:     src_str = "Third Party"; break;
+	case GL_DEBUG_SOURCE_APPLICATION:     src_str = "Application"; break;
+	case GL_DEBUG_SOURCE_OTHER:           src_str = "Other"; break;
+	}
+
+	char const* type_str = "Other";
+
+	switch (type) {
+	case GL_DEBUG_TYPE_ERROR:               type_str = "Error"; break;
+	case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: type_str = "Deprecated Behaviour"; break;
+	case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:  type_str = "Undefined Behaviour"; break;
+	case GL_DEBUG_TYPE_PORTABILITY:         type_str = "Portability"; break;
+	case GL_DEBUG_TYPE_PERFORMANCE:         type_str = "Performance"; break;
+	case GL_DEBUG_TYPE_MARKER:              type_str = "Marker"; break;
+	case GL_DEBUG_TYPE_PUSH_GROUP:          type_str = "Push Group"; break;
+	case GL_DEBUG_TYPE_POP_GROUP:           type_str = "Pop Group"; break;
+	case GL_DEBUG_TYPE_OTHER:               type_str = "Other"; break;
+	}
+
+	char const* severity_str = "Unknown";
+
+	switch (severity) {
+	case GL_DEBUG_SEVERITY_HIGH:         severity_str = "High"; break;
+	case GL_DEBUG_SEVERITY_MEDIUM:       severity_str = "Medium"; break;
+	case GL_DEBUG_SEVERITY_LOW:          severity_str = "Low"; break;
+	case GL_DEBUG_SEVERITY_NOTIFICATION: severity_str = "Notification"; break;
+	}
+
+	int sev = ANDROID_LOG_INFO;
+
+	if (severity == GL_DEBUG_SEVERITY_HIGH) {
+		sev = ANDROID_LOG_ERROR;
+	}
+
+	else if (severity == GL_DEBUG_SEVERITY_MEDIUM) {
+		sev = ANDROID_LOG_WARN;
+	}
+
+	// TODO better.
+
+	__android_log_print(sev, "mist-log", "OpenGL Debug message (%u): %s", id, message);
+	__android_log_print(sev, "mist-log", "    Source: %s", src_str);
+	__android_log_print(sev, "mist-log", "    Type: %s", type_str);
+	__android_log_print(sev, "mist-log", "    Severity: %s", severity_str);
 }
 
 static void render(state_t* s) {
@@ -440,6 +493,14 @@ void android_main(struct android_app* app) {
 	LOGI("OpenGL ES version: %s.", glGetString(GL_VERSION));
 	LOGI("OpenGL ES renderer: %s.", glGetString(GL_RENDERER));
 	LOGI("OpenGL ES shading language version: %s.", glGetString(GL_SHADING_LANGUAGE_VERSION));
+
+	// Set up OpenGL debugging.
+
+	glEnable(GL_DEBUG_OUTPUT);
+	glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+	glDebugMessageCallback(gl_debug_cb, nullptr);
+	glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_FALSE);
+	glDebugMessageControl(GL_DONT_CARE, GL_DEBUG_TYPE_ERROR, GL_DONT_CARE, 0, nullptr, GL_TRUE);
 
 	// Create an OpenXR session.
 
