@@ -426,7 +426,7 @@ void android_main(struct android_app* app) {
 		return;
 	}
 
-	LOGI("Initialized EGL %d.%d\n", egl_major, egl_minor);
+	LOGI("Initialized EGL %d.%d.", egl_major, egl_minor);
 
 	// Find a suitable config.
 	// Note that we don't really want to use multisampling here, as that would be completely wasted by composition and timewarping.
@@ -613,7 +613,7 @@ void android_main(struct android_app* app) {
 	}
 
 	int64_t const format = formats[0]; // First one is our OpenXR runtime's preference.
-	LOGI("Selecting OpenXR format 0x%lx (runtime preference).\n", format);
+	LOGI("Selecting OpenXR format 0x%lx (runtime preference).", format);
 
 	// Create the swapchains (one for each view, and one for colour and depth).
 
