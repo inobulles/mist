@@ -21,7 +21,7 @@ AR=$TOOLCHAIN_PATH/bin/llvm-ar
 AAPT=$BUILD_TOOLS_PATH/aapt
 APKSIGNER=$BUILD_TOOLS_PATH/apksigner
 ZIPALIGN=$BUILD_TOOLS_PATH/zipalign
-# INTERCEPT_BUILD=intercept-build
+INTERCEPT_BUILD=intercept-build
 
 # Build the native app glue static library from the NDK.
 
@@ -41,7 +41,7 @@ cp $TOOLCHAIN_PATH/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so .out/a
 
 $INTERCEPT_BUILD $CXX \
 	-Wall \
-	-I $NATIVE_APP_GLUE_PATH -I $OPENXR_SDK/build/include \
+	-I$NATIVE_APP_GLUE_PATH -I$OPENXR_SDK/build/include -Isrc/include \
 	--sysroot=$TOOLCHAIN_PATH/sysroot \
 	-fPIC \
 	-c src/main.cpp -o .out/main.o

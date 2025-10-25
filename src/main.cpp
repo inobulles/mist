@@ -4,6 +4,7 @@
 
 #include <EGL/egl.h>
 #include <GLES/gl.h>
+#include <glad/glad.h>
 
 #include <android/log.h>
 #include <android_native_app_glue.h>
