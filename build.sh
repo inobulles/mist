@@ -13,16 +13,6 @@ rm -r .out/apk_stage
 mkdir -p .out/apk_stage
 mkdir -p .out/apk_stage/lib/$ABI
 
-# Some commands.
-
-CC=$TOOLCHAIN_PATH/bin/$TARGET_TRIPLE-clang
-CXX=$TOOLCHAIN_PATH/bin/$TARGET_TRIPLE-clang++
-AR=$TOOLCHAIN_PATH/bin/llvm-ar
-AAPT=$BUILD_TOOLS_PATH/aapt
-APKSIGNER=$BUILD_TOOLS_PATH/apksigner
-ZIPALIGN=$BUILD_TOOLS_PATH/zipalign
-INTERCEPT_BUILD=intercept-build
-
 # Build the native app glue static library from the NDK.
 
 $CC -Wall -Werror -c $NATIVE_APP_GLUE_PATH/android_native_app_glue.c -o .out/native_app_glue.o

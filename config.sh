@@ -3,6 +3,7 @@
 
 ANDROID_SDK=/home/obiwac/Android/Sdk
 OPENXR_SDK=/home/obiwac/aqua/vr/OpenXR-SDK-Source # From https://github.com/KhronosGroup/OpenXR-SDK-Source.
+AQUA=/home/obiwac/aqua/aqua
 SDK_VERSION=36.1.0 # TODO Is this SDK version or build tools version?
 NDK_VERSION=27.2.12479018
 ANDROID_VERSION=31
@@ -18,3 +19,13 @@ NDK_PATH=$ANDROID_SDK/ndk/$NDK_VERSION
 TOOLCHAIN_PATH=$NDK_PATH/toolchains/llvm/prebuilt/$HOST_TRIPLE
 PLATFORM_PATH=$ANDROID_SDK/platforms/android-$ANDROID_VERSION/
 NATIVE_APP_GLUE_PATH=$NDK_PATH/sources/android/native_app_glue
+
+# Some commands.
+
+CC=$TOOLCHAIN_PATH/bin/$TARGET_TRIPLE-clang
+CXX=$TOOLCHAIN_PATH/bin/$TARGET_TRIPLE-clang++
+AR=$TOOLCHAIN_PATH/bin/llvm-ar
+AAPT=$BUILD_TOOLS_PATH/aapt
+APKSIGNER=$BUILD_TOOLS_PATH/apksigner
+ZIPALIGN=$BUILD_TOOLS_PATH/zipalign
+INTERCEPT_BUILD=intercept-build
