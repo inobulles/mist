@@ -34,6 +34,13 @@ cp $TOOLCHAIN_PATH/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so .out/a
 # Build the program itself.
 # This is simply a shared library loaded presumably somewhere in the JVM.
 
+$INTERCEPT_BUILD $CC \
+	-Wall \
+	-I$NATIVE_APP_GLUE_PATH \
+	--sysroot=$TOOLCHAIN_PATH/sysroot \
+	-fPIC \
+	-c src/gvd.c -o .out/gvd.o
+
 $INTERCEPT_BUILD $CXX \
 	-Wall \
 	-I$NATIVE_APP_GLUE_PATH -I$OPENXR_SDK/build/include -Isrc/glad/include \
@@ -47,7 +54,7 @@ fi
 
 $CXX \
 	-I $NATIVE_APP_GLUE_PATH -L.out/apk_stage/lib/$ABI -shared \
-	.out/main.o .out/glad.o -o .out/apk_stage/lib/$ABI/libmain.so \
+	.out/main.o .out/glad.o .out/gvd.o -o .out/apk_stage/lib/$ABI/libmain.so \
 	-llog -lopenxr_loader -landroid -lEGL -lGLESv1_CM .out/native_app_glue.o
 
 # Copy all the AQUA stuff.

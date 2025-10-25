@@ -1,23 +1,22 @@
+#include "gvd.h"
+#include "log.h"
+
 #include <cassert>
 #include <jni.h>
-#include <string.h>
+#include <string>
+
+#include <vector>
 
 #include <EGL/egl.h>
 #include <glad/gles2.h>
 
-#include <android/log.h>
 #include <android_native_app_glue.h>
-#include <vector>
 
 #define XR_USE_PLATFORM_ANDROID
 #define XR_USE_GRAPHICS_API_OPENGL_ES
 
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
-
-#define LOGI(...) ((void) __android_log_print(ANDROID_LOG_INFO, "mist-log", __VA_ARGS__))
-#define LOGW(...) ((void) __android_log_print(ANDROID_LOG_WARN, "mist-log", __VA_ARGS__))
-#define LOGE(...) ((void) __android_log_print(ANDROID_LOG_ERROR, "mist-log", __VA_ARGS__))
 
 typedef struct {
 	struct android_app* app;
@@ -93,6 +92,8 @@ static void render(state_t* s) {
 void android_main(struct android_app* app) {
 	state_t s = {};
 	app->userData = &s;
+
+	start_gvd(app->activity->assetManager);
 
 	// Initialize OpenXR loader.
 
