@@ -2,8 +2,8 @@
 #include <jni.h>
 #include <string.h>
 
-#include <glad/gles2.h>
 #include <EGL/egl.h>
+#include <glad/gles2.h>
 
 #include <android/log.h>
 #include <android_native_app_glue.h>
@@ -498,6 +498,94 @@ void android_main(struct android_app* app) {
 		LOGI("For our primary stereo view configuration type, OpenXR runtime supports a (recommended) %dx%d resolution view.", v.recommendedImageRectWidth, v.recommendedImageRectHeight);
 	}
 
+	// Get swapchain formats.
+
+	uint32_t format_count = 0;
+
+	if (xrEnumerateSwapchainFormats(session, 0, &format_count, nullptr) != XR_SUCCESS) {
+		LOGW("Couldn't get swapchain formats.");
+		return;
+	}
+
+	auto formats = std::vector<int64_t>(format_count);
+
+	if (xrEnumerateSwapchainFormats(session, format_count, &format_count, formats.data()) != XR_SUCCESS) {
+		LOGW("Couldn't get swapchain formats.");
+		return;
+	}
+
+	int64_t const format = formats[0]; // First one is our OpenXR runtime's preference.
+	LOGI("Selecting OpenXR format 0x%lx (runtime preference).\n", format);
+
+	// Create the swapchains (one for each view, and one for colour and depth).
+
+	struct SwapchainInfo {
+		XrSwapchain swapchain = XR_NULL_HANDLE;
+		int64_t format = 0;
+		std::vector<void*> image_views;
+	};
+
+	auto colour_swapchains = std::vector<SwapchainInfo>(view_config_views.size());
+	auto depth_swapchains = std::vector<SwapchainInfo>(view_config_views.size());
+
+	for (size_t i = 0; i < view_config_views.size(); i++) {
+		auto view_config_view = view_config_views[i];
+
+		// Colour swapchain.
+
+		SwapchainInfo& colour_swapchain = colour_swapchains[i];
+		colour_swapchain.format = GL_RGBA8; // TODO Get this from supported swapchain formats (see GetSupportedColorSwapchainFormats and m_graphicsAPI->SelectColorSwapchainFormat(formats)).
+
+		XrSwapchainCreateInfo const colour_create_info = {
+			.type = XR_TYPE_SWAPCHAIN_CREATE_INFO,
+			.createFlags = 0,
+			.usageFlags = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT,
+			.format = colour_swapchain.format,
+			.sampleCount = view_config_view.recommendedSwapchainSampleCount,
+			.width = view_config_view.recommendedImageRectWidth,
+			.height = view_config_view.recommendedImageRectHeight,
+			.faceCount = 1,
+			.arraySize = 1,
+			.mipCount = 1,
+		};
+
+		assert(xrCreateSwapchain(session, &colour_create_info, &colour_swapchain.swapchain) == XR_SUCCESS);
+
+		// Depth swapchain.
+
+		SwapchainInfo& depth_swapchain = depth_swapchains[i];
+		depth_swapchain.format = GL_DEPTH_COMPONENT24; // TODO Get this from supported swapchain formats (see GetSupportedColorSwapchainFormats and m_graphicsAPI->SelectColorSwapchainFormat(formats)).
+
+		XrSwapchainCreateInfo const depth_create_info = {
+			.type = XR_TYPE_SWAPCHAIN_CREATE_INFO,
+			.createFlags = 0,
+			.usageFlags = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+			.format = depth_swapchain.format,
+			.sampleCount = view_config_view.recommendedSwapchainSampleCount,
+			.width = view_config_view.recommendedImageRectWidth,
+			.height = view_config_view.recommendedImageRectHeight,
+			.faceCount = 1,
+			.arraySize = 1,
+			.mipCount = 1,
+		};
+
+		assert(xrCreateSwapchain(session, &depth_create_info, &depth_swapchain.swapchain) == XR_SUCCESS);
+
+		// Get the colour swapchain images.
+
+		uint32_t colour_image_count = 0;
+		assert(xrEnumerateSwapchainImages(colour_swapchain.swapchain, 0, &colour_image_count, nullptr) == XR_SUCCESS);
+		auto colour_images = std::vector<XrSwapchainImageBaseHeader>(colour_image_count, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR});
+		assert(xrEnumerateSwapchainImages(colour_swapchain.swapchain, colour_image_count, &colour_image_count, colour_images.data()) == XR_SUCCESS);
+
+		// Get the depth swapchain images.
+
+		uint32_t depth_image_count = 0;
+		assert(xrEnumerateSwapchainImages(depth_swapchain.swapchain, 0, &depth_image_count, nullptr) == XR_SUCCESS);
+		auto depth_images = std::vector<XrSwapchainImageBaseHeader>(depth_image_count, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR});
+		assert(xrEnumerateSwapchainImages(depth_swapchain.swapchain, depth_image_count, &depth_image_count, depth_images.data()) == XR_SUCCESS);
+	}
+
 	// Starting from a saved state; restore it.
 
 	if (app->savedState != NULL) {
@@ -505,6 +593,8 @@ void android_main(struct android_app* app) {
 	}
 
 	// Main loop.
+
+	LOGI("Starting main loop.");
 
 	bool running = true;
 	bool session_running = false;
