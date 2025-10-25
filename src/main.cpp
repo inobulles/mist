@@ -116,6 +116,50 @@ static void engine_handle_cmd(struct android_app* app, int32_t cmd) {
 	}
 }
 
+XrBool32 debug_utils_messenger_cb(
+	XrDebugUtilsMessageSeverityFlagsEXT severity,
+	XrDebugUtilsMessageTypeFlagsEXT type,
+	XrDebugUtilsMessengerCallbackDataEXT const* data,
+	void* user_data
+) {
+	std::string type_str = "";
+
+	if ((type & XR_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) != 0) {
+		type_str += "GEN,";
+	}
+
+	if ((type & XR_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) != 0) {
+		type_str += "VAL,";
+	}
+
+	if ((type & XR_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT) != 0) {
+		type_str += "PERF,";
+	}
+
+	if ((type & XR_DEBUG_UTILS_MESSAGE_TYPE_CONFORMANCE_BIT_EXT) != 0) {
+		type_str += "CONF,";
+	}
+
+	if (!type_str.empty() && type_str.back() == ',') {
+		type_str.pop_back();
+	}
+
+	switch (severity) {
+	case XR_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+	case XR_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+		LOGI("[XR_DEBUG_UTILS_MESSAGE %s %s] %s", type_str.c_str(), data->messageId, data->message);
+		break;
+	case XR_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+		LOGW("[XR_DEBUG_UTILS_MESSAGE %s %s] %s", type_str.c_str(), data->messageId, data->message);
+		break;
+	case XR_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+		LOGE("[XR_DEBUG_UTILS_MESSAGE %s %s] %s", type_str.c_str(), data->messageId, data->message);
+		break;
+	}
+
+	return XrBool32();
+}
+
 /**
  * This is the main entry point of a native application that is using
  * android_native_app_glue.  It runs in its own thread, with its own
@@ -259,8 +303,38 @@ void android_main(struct android_app* app) {
 		XR_VERSION_PATCH(instance_props.runtimeVersion)
 	);
 
-	// TODO Set up XR_EXT_debug_utils.
+	// Set up XR_EXT_debug_utils.
 	// See the OpenXR-Tutorials/Common/OpenXRDebugUtils.h file.
+
+	XrDebugUtilsMessengerCreateInfoEXT const debug_utils_messenger_info = {
+		.type = XR_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+		.messageSeverities =
+			XR_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+			XR_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+			XR_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+			XR_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+		.messageTypes =
+			XR_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+			XR_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+			XR_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT |
+			XR_DEBUG_UTILS_MESSAGE_TYPE_CONFORMANCE_BIT_EXT,
+		.userCallback = (PFN_xrDebugUtilsMessengerCallbackEXT) debug_utils_messenger_cb,
+		.userData = nullptr,
+	};
+
+	PFN_xrCreateDebugUtilsMessengerEXT xrCreateDebugUtilsMessengerEXT;
+
+	if (xrGetInstanceProcAddr(inst, "xrCreateDebugUtilsMessengerEXT", (PFN_xrVoidFunction*) &xrCreateDebugUtilsMessengerEXT) != XR_SUCCESS) {
+		LOGE("Couldn't get xrCreateDebugUtilsMessengerEXT.");
+		return;
+	}
+
+	XrDebugUtilsMessengerEXT debug_utils_messenger;
+
+	if (xrCreateDebugUtilsMessengerEXT(inst, &debug_utils_messenger_info, &debug_utils_messenger) != XR_SUCCESS) {
+		LOGE("Couldn't create debug utils messenger.");
+		return;
+	}
 
 	// Get system info.
 
