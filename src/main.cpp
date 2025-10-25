@@ -18,10 +18,27 @@
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
+struct Swapchain {
+	XrSwapchain swapchain = XR_NULL_HANDLE;
+	int64_t format = 0;
+	std::vector<GLuint> images;
+	std::vector<GLuint> image_views;
+};
+
 typedef struct {
 	struct android_app* app;
+	bool resumed;
+
 	XrSession session;
+	XrSessionState session_state;
+
+	XrViewConfigurationType view_config;
+	std::vector<XrViewConfigurationView> view_config_views;
 	XrEnvironmentBlendMode env_blend_mode;
+	XrSpace local_space;
+
+	std::vector<Swapchain> colour_swapchains;
+	std::vector<Swapchain> depth_swapchains;
 } state_t;
 
 static XrBool32 debug_utils_messenger_cb(
@@ -121,29 +138,190 @@ static void gl_debug_cb(GLenum source, GLenum type, GLuint id, GLenum severity, 
 	__android_log_print(sev, "mist-log", "    Severity: %s", severity_str);
 }
 
+static bool render_views(
+	state_t* s,
+	XrFrameState* frame_state,
+	XrCompositionLayerProjection& layer_proj,
+	std::vector<XrCompositionLayerProjectionView>& layer_proj_views
+) {
+	// Locate views (i.e. get their poses and FOVs) within the reference space.
+
+	XrViewState view_state = {XR_TYPE_VIEW_STATE};
+
+	XrViewLocateInfo view_locate = {
+		.type = XR_TYPE_VIEW_LOCATE_INFO,
+		.viewConfigurationType = s->view_config,
+		.displayTime = frame_state->predictedDisplayTime,
+		.space = s->local_space,
+	};
+
+	uint32_t _ = 0;
+	auto views = std::vector<XrView>(s->view_config_views.size(), {XR_TYPE_VIEW});
+
+	if (xrLocateViews(s->session, &view_locate, &view_state, views.size(), &_, views.data()) != XR_SUCCESS) {
+		LOGE("Failed to locate views.");
+		return false;
+	}
+
+	// clang-format off
+	layer_proj_views = std::vector<XrCompositionLayerProjectionView>(views.size(), {
+		.type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW,
+		.subImage = {
+			.imageRect = {
+				.offset = {
+					.x = 0,
+					.y = 0,
+				},
+			},
+			.imageArrayIndex = 0, // XXX Will be useful when we do multiview rendering.
+		},
+	});
+	// clang-format on
+
+	for (size_t i = 0; i < views.size(); i++) {
+		Swapchain& colour_swapchain = s->colour_swapchains[i];
+		Swapchain& depth_swapchain = s->depth_swapchains[i];
+
+		// Acquire and get index of the next image we have to take from the swapchain.
+
+		uint32_t colour_image_index = 0;
+		uint32_t depth_image_index = 0;
+
+		XrSwapchainImageAcquireInfo acquire_info = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+
+		assert(xrAcquireSwapchainImage(colour_swapchain.swapchain, &acquire_info, &colour_image_index) == XR_SUCCESS);
+		assert(xrAcquireSwapchainImage(depth_swapchain.swapchain, &acquire_info, &depth_image_index) == XR_SUCCESS);
+
+		// Now, wait (forever) for that image to be available.
+
+		XrSwapchainImageWaitInfo wait_info = {
+			.type = XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO,
+			.timeout = XR_INFINITE_DURATION,
+		};
+
+		assert(xrWaitSwapchainImage(colour_swapchain.swapchain, &wait_info) == XR_SUCCESS);
+		assert(xrWaitSwapchainImage(depth_swapchain.swapchain, &wait_info) == XR_SUCCESS);
+
+		// Get width/height, create layer projection view entry, and set the viewport size.
+
+		uint32_t const width = s->view_config_views[i].recommendedImageRectWidth;
+		uint32_t const height = s->view_config_views[i].recommendedImageRectHeight;
+
+		layer_proj_views[i].pose = views[i].pose;
+		layer_proj_views[i].fov = views[i].fov;
+		layer_proj_views[i].subImage.swapchain = colour_swapchain.swapchain;
+		layer_proj_views[i].subImage.imageRect.extent.width = width;
+		layer_proj_views[i].subImage.imageRect.extent.height = height;
+
+		// Actually render to this layer.
+
+		glBindFramebuffer(GL_FRAMEBUFFER, colour_swapchain.image_views[colour_image_index]);
+		glClearColor(1.0, 0.0, 1.0, 1.0);
+		glClear(GL_COLOR_BUFFER_BIT);
+
+		glBindFramebuffer(GL_FRAMEBUFFER, depth_swapchain.image_views[depth_image_index]);
+		glClearDepthf(1.0);
+		glClear(GL_DEPTH_BUFFER_BIT);
+
+		// TODO Give this block a name.
+
+		glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colour_swapchain.images[colour_image_index], 0);
+
+		if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+			LOGE("incomplete framebuffer");
+		}
+
+		glViewport(0, 0, width, height);
+		glScissor(0, 0, width, height);
+
+		// Finally, give swapchain image back to OpenXR, allowing compositor to use the image again.
+
+		XrSwapchainImageReleaseInfo release_info = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+		assert(xrReleaseSwapchainImage(colour_swapchain.swapchain, &release_info) == XR_SUCCESS);
+		assert(xrReleaseSwapchainImage(depth_swapchain.swapchain, &release_info) == XR_SUCCESS);
+	}
+
+	layer_proj.viewCount = layer_proj_views.size();
+	layer_proj.views = layer_proj_views.data();
+
+	return true;
+}
+
 static void render(state_t* s) {
+	// Wait for a frame.
+
 	XrFrameState frame_state = {XR_TYPE_FRAME_STATE};
 	XrFrameWaitInfo frame_wait_info = {XR_TYPE_FRAME_WAIT_INFO};
 	assert(xrWaitFrame(s->session, &frame_wait_info, &frame_state) == XR_SUCCESS);
 
+	// Begin a frame.
+
 	XrFrameBeginInfo frame_begin_info = {XR_TYPE_FRAME_BEGIN_INFO};
 	assert(xrBeginFrame(s->session, &frame_begin_info) == XR_SUCCESS);
 
-	// TODO Render layers.
+	// Render layers.
+
+	auto layers = std::vector<XrCompositionLayerBaseHeader*>();
+
+	XrCompositionLayerProjection layer_proj = {
+		.type = XR_TYPE_COMPOSITION_LAYER_PROJECTION,
+		.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT | XR_COMPOSITION_LAYER_CORRECT_CHROMATIC_ABERRATION_BIT,
+		.space = s->local_space,
+	};
+
+	std::vector<XrCompositionLayerProjectionView> layer_proj_views;
+
+	bool const active = s->session_state == XR_SESSION_STATE_SYNCHRONIZED || s->session_state == XR_SESSION_STATE_VISIBLE || s->session_state == XR_SESSION_STATE_FOCUSED;
+	bool rendered = false;
+
+	if (active && frame_state.shouldRender) {
+		rendered = render_views(s, &frame_state, layer_proj, layer_proj_views);
+
+		if (rendered) {
+			layers.push_back(reinterpret_cast<XrCompositionLayerBaseHeader*>(&layer_proj));
+		}
+	}
+
+	// End the frame.
 
 	XrFrameEndInfo const frame_end_info = {
 		.type = XR_TYPE_FRAME_END_INFO,
 		.displayTime = frame_state.predictedDisplayTime,
 		.environmentBlendMode = s->env_blend_mode,
-		.layerCount = 0,
-		.layers = nullptr,
+		.layerCount = static_cast<uint32_t>(layers.size()),
+		.layers = layers.data(),
 	};
 
-	assert(xrEndFrame(s->session, &frame_end_info) == XR_SUCCESS);
+	XrResult const res = xrEndFrame(s->session, &frame_end_info);
+
+	if (res != XR_SUCCESS) {
+		LOGE("Failed to render frame: %d", res);
+	}
+}
+
+static void android_handle_cmd(struct android_app* app, int32_t cmd) {
+	state_t* const s = (state_t*) app->userData;
+
+	switch (cmd) {
+	case APP_CMD_RESUME:
+		s->resumed = true;
+		break;
+	case APP_CMD_PAUSE:
+		s->resumed = false;
+		break;
+	case APP_CMD_START:
+	case APP_CMD_STOP:
+	case APP_CMD_DESTROY:
+	case APP_CMD_INIT_WINDOW:
+	case APP_CMD_TERM_WINDOW:
+		break;
+	}
 }
 
 void android_main(struct android_app* app) {
 	state_t s = {};
+
+	app->onAppCmd = android_handle_cmd;
 	app->userData = &s;
 
 	start_gvd(app->activity->assetManager);
@@ -425,7 +603,7 @@ void android_main(struct android_app* app) {
 		EGLint value = 0;
 		eglGetConfigAttrib(display, config, EGL_RENDERABLE_TYPE, &value);
 
-		if ((value & EGL_OPENGL_ES3_BIT) != EGL_OPENGL_ES3_BIT) {
+		if ((value & EGL_OPENGL_ES3_BIT) == 0) {
 			continue;
 		}
 
@@ -538,18 +716,18 @@ void android_main(struct android_app* app) {
 		return;
 	}
 
-	XrViewConfigurationType view_config = XR_VIEW_CONFIGURATION_TYPE_MAX_ENUM;
+	s.view_config = XR_VIEW_CONFIGURATION_TYPE_MAX_ENUM;
 
 	for (auto& v : view_configs) {
 		LOGI("OpenXR runtime supports %d view configuration type.", v);
 
 		if (v == XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO) {
-			view_config = v;
+			s.view_config = v;
 			break;
 		}
 	}
 
-	if (view_config == XR_VIEW_CONFIGURATION_TYPE_MAX_ENUM) {
+	if (s.view_config == XR_VIEW_CONFIGURATION_TYPE_MAX_ENUM) {
 		LOGW("Couldn't find primary stereo view configuration type.");
 		return;
 	}
@@ -558,19 +736,19 @@ void android_main(struct android_app* app) {
 
 	uint32_t view_config_view_count = 0;
 
-	if (xrEnumerateViewConfigurationViews(inst, sys_id, view_config, 0, &view_config_view_count, nullptr) != XR_SUCCESS) {
+	if (xrEnumerateViewConfigurationViews(inst, sys_id, s.view_config, 0, &view_config_view_count, nullptr) != XR_SUCCESS) {
 		LOGW("Couldn't get configuration views.");
 		return;
 	}
 
-	auto view_config_views = std::vector<XrViewConfigurationView>(view_config_view_count, {XR_TYPE_VIEW_CONFIGURATION_VIEW});
+	s.view_config_views = std::vector<XrViewConfigurationView>(view_config_view_count, {XR_TYPE_VIEW_CONFIGURATION_VIEW});
 
-	if (xrEnumerateViewConfigurationViews(inst, sys_id, view_config, view_config_view_count, &view_config_view_count, view_config_views.data()) != XR_SUCCESS) {
+	if (xrEnumerateViewConfigurationViews(inst, sys_id, s.view_config, view_config_view_count, &view_config_view_count, s.view_config_views.data()) != XR_SUCCESS) {
 		LOGW("Couldn't get configuration views.");
 		return;
 	}
 
-	for (auto& v : view_config_views) {
+	for (auto& v : s.view_config_views) {
 		LOGI("For our primary stereo view configuration type, OpenXR runtime supports a (recommended) %dx%d resolution view.", v.recommendedImageRectWidth, v.recommendedImageRectHeight);
 	}
 
@@ -590,27 +768,25 @@ void android_main(struct android_app* app) {
 		return;
 	}
 
+	for (auto format : formats) {
+		LOGI("Supported format 0x%lx", format);
+	}
+
 	int64_t const format = formats[0]; // First one is our OpenXR runtime's preference.
 	LOGI("Selecting OpenXR format 0x%lx (runtime preference).", format);
 
 	// Create the swapchains (one for each view, and one for colour and depth).
 
-	struct SwapchainInfo {
-		XrSwapchain swapchain = XR_NULL_HANDLE;
-		int64_t format = 0;
-		std::vector<void*> image_views;
-	};
+	s.colour_swapchains = std::vector<Swapchain>(s.view_config_views.size());
+	s.depth_swapchains = std::vector<Swapchain>(s.view_config_views.size());
 
-	auto colour_swapchains = std::vector<SwapchainInfo>(view_config_views.size());
-	auto depth_swapchains = std::vector<SwapchainInfo>(view_config_views.size());
-
-	for (size_t i = 0; i < view_config_views.size(); i++) {
-		auto view_config_view = view_config_views[i];
+	for (size_t i = 0; i < s.view_config_views.size(); i++) {
+		auto view_config_view = s.view_config_views[i];
 
 		// Colour swapchain.
 
-		SwapchainInfo& colour_swapchain = colour_swapchains[i];
-		colour_swapchain.format = GL_RGBA8; // TODO Get this from supported swapchain formats (see GetSupportedColorSwapchainFormats and m_graphicsAPI->SelectColorSwapchainFormat(formats)).
+		Swapchain& colour_swapchain = s.colour_swapchains[i];
+		colour_swapchain.format = GL_SRGB8_ALPHA8; // TODO Get this from supported swapchain formats (see GetSupportedColorSwapchainFormats and m_graphicsAPI->SelectColorSwapchainFormat(formats)).
 
 		XrSwapchainCreateInfo const colour_create_info = {
 			.type = XR_TYPE_SWAPCHAIN_CREATE_INFO,
@@ -629,8 +805,8 @@ void android_main(struct android_app* app) {
 
 		// Depth swapchain.
 
-		SwapchainInfo& depth_swapchain = depth_swapchains[i];
-		depth_swapchain.format = GL_DEPTH_COMPONENT24; // TODO Get this from supported swapchain formats (see GetSupportedColorSwapchainFormats and m_graphicsAPI->SelectColorSwapchainFormat(formats)).
+		Swapchain& depth_swapchain = s.depth_swapchains[i];
+		depth_swapchain.format = GL_DEPTH_COMPONENT16; // TODO Get this from supported swapchain formats (see GetSupportedColorSwapchainFormats and m_graphicsAPI->SelectColorSwapchainFormat(formats)).
 
 		XrSwapchainCreateInfo const depth_create_info = {
 			.type = XR_TYPE_SWAPCHAIN_CREATE_INFO,
@@ -663,28 +839,40 @@ void android_main(struct android_app* app) {
 
 		// Create framebuffers for colour swapchain images.
 
+		colour_swapchain.image_views = std::vector<GLuint>();
+		colour_swapchain.images = std::vector<GLuint>();
+
 		for (auto& image : colour_images) {
-			GLuint framebuffer = 0;
-			glGenFramebuffers(1, &framebuffer);
-			glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+			GLuint fbo = 0;
+			glGenFramebuffers(1, &fbo);
+			glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 
 			// XXX When we move on to using multiview, we should use glFramebufferTextureMultiviewOVR here.
 
 			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, (GLuint) image.image, 0);
 			assert(glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+			colour_swapchain.images.push_back(image.image);
+			colour_swapchain.image_views.push_back(fbo);
 		}
 
 		// Create framebuffers for depth swapchain images.
 
+		depth_swapchain.image_views = std::vector<GLuint>();
+		depth_swapchain.images = std::vector<GLuint>();
+
 		for (auto& image : depth_images) {
-			GLuint framebuffer = 0;
-			glGenFramebuffers(1, &framebuffer);
-			glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+			GLuint fbo = 0;
+			glGenFramebuffers(1, &fbo);
+			glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 
 			// XXX When we move on to using multiview, we should use glFramebufferTextureMultiviewOVR here.
 
 			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, (GLuint) image.image, 0);
 			assert(glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+			depth_swapchain.images.push_back(image.image);
+			depth_swapchain.image_views.push_back(fbo);
 		}
 	}
 
@@ -692,14 +880,14 @@ void android_main(struct android_app* app) {
 
 	uint32_t env_blend_mode_count = 0;
 
-	if (xrEnumerateEnvironmentBlendModes(inst, sys_id, view_config, 0, &env_blend_mode_count, nullptr) != XR_SUCCESS) {
+	if (xrEnumerateEnvironmentBlendModes(inst, sys_id, s.view_config, 0, &env_blend_mode_count, nullptr) != XR_SUCCESS) {
 		LOGE("Failed to enumerate OpenXR environment blend modes.");
 		return;
 	}
 
 	auto env_blend_modes = std::vector<XrEnvironmentBlendMode>(env_blend_mode_count);
 
-	if (xrEnumerateEnvironmentBlendModes(inst, sys_id, view_config, env_blend_mode_count, &env_blend_mode_count, env_blend_modes.data()) != XR_SUCCESS) {
+	if (xrEnumerateEnvironmentBlendModes(inst, sys_id, s.view_config, env_blend_mode_count, &env_blend_mode_count, env_blend_modes.data()) != XR_SUCCESS) {
 		LOGE("Failed to enumerate OpenXR environment blend modes.");
 		return;
 	}
@@ -728,9 +916,7 @@ void android_main(struct android_app* app) {
 		.poseInReferenceSpace = {{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}},
 	};
 
-	XrSpace ref_space;
-
-	if (xrCreateReferenceSpace(s.session, &ref_space_create, &ref_space) != XR_SUCCESS) {
+	if (xrCreateReferenceSpace(s.session, &ref_space_create, &s.local_space) != XR_SUCCESS) {
 		LOGE("Failed to create OpenXR local reference space.");
 		return;
 	}
@@ -741,9 +927,7 @@ void android_main(struct android_app* app) {
 
 	bool running = true;
 	bool session_running = false;
-	XrSessionState session_state = XR_SESSION_STATE_UNKNOWN;
-
-	(void) session_state;
+	s.session_state = XR_SESSION_STATE_UNKNOWN;
 
 	for (; running;) {
 		// Read Android events.
@@ -751,7 +935,7 @@ void android_main(struct android_app* app) {
 		int events;
 		struct android_poll_source* source = nullptr;
 
-		while (ALooper_pollOnce(0, nullptr, &events, (void**) &source) >= 0) {
+		while (ALooper_pollOnce((!s.resumed && !session_running && app->destroyRequested == 0) ? -1 : 0, nullptr, &events, (void**) &source) >= 0) {
 			if (source == nullptr) {
 				break;
 			}
@@ -813,7 +997,7 @@ void android_main(struct android_app* app) {
 				case XR_SESSION_STATE_READY: {
 					XrSessionBeginInfo const session_begin_info = {
 						.type = XR_TYPE_SESSION_BEGIN_INFO,
-						.primaryViewConfigurationType = view_config,
+						.primaryViewConfigurationType = s.view_config,
 					};
 
 					XrResult const res = xrBeginSession(s.session, &session_begin_info);
@@ -850,7 +1034,7 @@ void android_main(struct android_app* app) {
 					break;
 				}
 
-				session_state = session_state_change->state;
+				s.session_state = session_state_change->state;
 				break;
 			}
 			default:;
