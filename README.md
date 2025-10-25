@@ -37,6 +37,17 @@ adb shell am start -n com.inobulles.mist/android.app.NativeActivity
 adb logcat | grep native-activity
 ```
 
+## Executing AQUA binaries
+
+As of Android SDK 29, Android does not allow you to execute arbitrary binaries anymore, which obviously is a problem for the AQUA binaries - notably the GrapeVine daemon - which must run on Mist.
+This is a problem Termux faces too of course: <https://github.com/termux/termux-packages/wiki/Termux-execution-environment>.
+
+There are a couple potential solutions to this:
+
+- Stick to Android SDK 28. What I and Termux are doing at the moment but I don't want this to be a long-term solution.
+- Option to build gvd as a shared library and run it in the same process as Mist. This is possible but sounds like a lot of work, and means that a crashing VDEV means all of Mist crashes (right?).
+- Something else. Termux is a good space to keep an eye on.
+
 ## Resources
 
 - Slightly out of date, but helped me with the steps to build APKs outside of Android Studio: <https://github.com/skanti/Android-Manual-Build-Command-Line>
