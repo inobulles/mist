@@ -15,13 +15,14 @@
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
-#define LOGI(...) ((void) __android_log_print(ANDROID_LOG_INFO, "mist", __VA_ARGS__))
-#define LOGW(...) ((void) __android_log_print(ANDROID_LOG_WARN, "mist", __VA_ARGS__))
-#define LOGE(...) ((void) __android_log_print(ANDROID_LOG_ERROR, "mist", __VA_ARGS__))
+#define LOGI(...) ((void) __android_log_print(ANDROID_LOG_INFO, "mist-log", __VA_ARGS__))
+#define LOGW(...) ((void) __android_log_print(ANDROID_LOG_WARN, "mist-log", __VA_ARGS__))
+#define LOGE(...) ((void) __android_log_print(ANDROID_LOG_ERROR, "mist-log", __VA_ARGS__))
 
 typedef struct {
 	struct android_app* app;
 	XrSession session;
+	XrEnvironmentBlendMode env_blend_mode;
 } state_t;
 
 XrBool32 debug_utils_messenger_cb(
@@ -69,7 +70,24 @@ XrBool32 debug_utils_messenger_cb(
 }
 
 static void render(state_t* s) {
-	(void) s;
+	XrFrameState frame_state = {XR_TYPE_FRAME_STATE};
+	XrFrameWaitInfo frame_wait_info = {XR_TYPE_FRAME_WAIT_INFO};
+	assert(xrWaitFrame(s->session, &frame_wait_info, &frame_state) == XR_SUCCESS);
+
+	XrFrameBeginInfo frame_begin_info = {XR_TYPE_FRAME_BEGIN_INFO};
+	assert(xrBeginFrame(s->session, &frame_begin_info) == XR_SUCCESS);
+
+	// TODO Render layers.
+
+	XrFrameEndInfo const frame_end_info = {
+		.type = XR_TYPE_FRAME_END_INFO,
+		.displayTime = frame_state.predictedDisplayTime,
+		.environmentBlendMode = s->env_blend_mode,
+		.layerCount = 0,
+		.layers = nullptr,
+	};
+
+	assert(xrEndFrame(s->session, &frame_end_info) == XR_SUCCESS);
 }
 
 void android_main(struct android_app* app) {
@@ -624,21 +642,21 @@ void android_main(struct android_app* app) {
 		return;
 	}
 
-	XrEnvironmentBlendMode env_blend_mode = XR_ENVIRONMENT_BLEND_MODE_MAX_ENUM;
+	s.env_blend_mode = XR_ENVIRONMENT_BLEND_MODE_MAX_ENUM;
 
 	for (auto& blend_mode : env_blend_modes) {
 		if (blend_mode == XR_ENVIRONMENT_BLEND_MODE_OPAQUE || blend_mode == XR_ENVIRONMENT_BLEND_MODE_ADDITIVE) {
-			env_blend_mode = blend_mode;
+			s.env_blend_mode = blend_mode;
 			break;
 		}
 	}
 
-	if (env_blend_mode == XR_ENVIRONMENT_BLEND_MODE_MAX_ENUM) {
+	if (s.env_blend_mode == XR_ENVIRONMENT_BLEND_MODE_MAX_ENUM) {
 		LOGE("No supported OpenXR environment blend mode.");
 		return;
 	}
 
-	LOGI("Selecting OpenXR environment blend mode 0x%x (runtime preference).", env_blend_mode);
+	LOGI("Selecting OpenXR environment blend mode 0x%x (runtime preference).", s.env_blend_mode);
 
 	// Create reference space.
 
