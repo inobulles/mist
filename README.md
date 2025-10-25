@@ -16,11 +16,26 @@ When I add Android support to Bob the Builder, I will make it integrate with `sd
 
 To build the APK, simply run:
 
-```
+```sh
 sh build.sh
 ```
 
 This command will generate a signed APK in `.out/Mist.apk`.
+
+## Installing & debugging
+
+Installing:
+
+```sh
+adb install .out/Mist.apk
+```
+
+Debugging (i.e. starting and logging):
+
+```sh
+adb shell am start -n com.inobulles.mist/android.app.NativeActivity
+adb logcat | grep native-activity
+```
 
 ## Resources
 
