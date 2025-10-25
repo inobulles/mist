@@ -202,6 +202,7 @@ void start_gvd(AAssetManager* mgr) {
 	char* const envp[] = {
 		(char*) "LD_LIBRARY_PATH=/data/data/com.inobulles.mist/files/lib",
 		(char*) "UMBER_LVL=*=v,aqua.gvd.elp=i",
+		(char*) "UMBER_LINEBUF=true",
 		(char*) "GV_NODES_PATH=/data/data/com.inobulles.mist/files/tmp/gv.nodes",
 		(char*) "GV_LOCK_PATH=/data/data/com.inobulles.mist/files/tmp/gv.lock",
 		(char*) "GV_HOST_ID_PATH=/data/data/com.inobulles.mist/files/tmp/gv.host_id",
