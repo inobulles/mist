@@ -128,7 +128,7 @@ void android_main(struct android_app* app) {
 
 	memset(&engine, 0, sizeof(engine));
 	app->userData = &engine;
-	// app->onAppCmd = engine_handle_cmd;
+	app->onAppCmd = engine_handle_cmd;
 	app->onInputEvent = engine_handle_input;
 	engine.app = app;
 
@@ -599,6 +599,9 @@ void android_main(struct android_app* app) {
 	bool running = true;
 	bool session_running = false;
 	XrSessionState session_state = XR_SESSION_STATE_UNKNOWN;
+
+	(void) session_running;
+	(void) session_state;
 
 	for (; running;) {
 		// Read Android events.
