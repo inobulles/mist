@@ -742,6 +742,21 @@ void android_main(struct android_app* app) {
 
 	LOGI("Selecting OpenXR environment blend mode 0x%x (runtime preference).", env_blend_mode);
 
+	// Create reference space.
+
+	XrReferenceSpaceCreateInfo const ref_space_create = {
+		.type = XR_TYPE_REFERENCE_SPACE_CREATE_INFO,
+		.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL,
+		.poseInReferenceSpace = {{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}},
+	};
+
+	XrSpace ref_space;
+
+	if (xrCreateReferenceSpace(session, &ref_space_create, &ref_space) != XR_SUCCESS) {
+		LOGE("Failed to create OpenXR local reference space.");
+		return;
+	}
+
 	// Starting from a saved state; restore it.
 
 	if (app->savedState != NULL) {
