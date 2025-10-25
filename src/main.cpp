@@ -710,6 +710,38 @@ void android_main(struct android_app* app) {
 		}
 	}
 
+	// Get environment blend modes and select one.
+
+	uint32_t env_blend_mode_count = 0;
+
+	if (xrEnumerateEnvironmentBlendModes(inst, sys_id, view_config, 0, &env_blend_mode_count, nullptr) != XR_SUCCESS) {
+		LOGE("Failed to enumerate OpenXR environment blend modes.");
+		return;
+	}
+
+	auto env_blend_modes = std::vector<XrEnvironmentBlendMode>(env_blend_mode_count);
+
+	if (xrEnumerateEnvironmentBlendModes(inst, sys_id, view_config, env_blend_mode_count, &env_blend_mode_count, env_blend_modes.data()) != XR_SUCCESS) {
+		LOGE("Failed to enumerate OpenXR environment blend modes.");
+		return;
+	}
+
+	XrEnvironmentBlendMode env_blend_mode = XR_ENVIRONMENT_BLEND_MODE_MAX_ENUM;
+
+	for (auto& blend_mode : env_blend_modes) {
+		if (blend_mode == XR_ENVIRONMENT_BLEND_MODE_OPAQUE || blend_mode == XR_ENVIRONMENT_BLEND_MODE_ADDITIVE) {
+			env_blend_mode = blend_mode;
+			break;
+		}
+	}
+
+	if (env_blend_mode == XR_ENVIRONMENT_BLEND_MODE_MAX_ENUM) {
+		LOGE("No supported OpenXR environment blend mode.");
+		return;
+	}
+
+	LOGI("Selecting OpenXR environment blend mode 0x%x (runtime preference).", env_blend_mode);
+
 	// Starting from a saved state; restore it.
 
 	if (app->savedState != NULL) {
