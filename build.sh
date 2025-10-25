@@ -55,7 +55,7 @@ fi
 $CXX \
 	-I $NATIVE_APP_GLUE_PATH -L.out/apk_stage/lib/$ABI -shared \
 	.out/main.o .out/glad.o .out/gvd.o -o .out/apk_stage/lib/$ABI/libmain.so \
-	-llog -lopenxr_loader -landroid -lEGL -lGLESv1_CM .out/native_app_glue.o
+	-llog -lopenxr_loader -landroid -lEGL .out/native_app_glue.o
 
 # Copy all the AQUA stuff.
 
