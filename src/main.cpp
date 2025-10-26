@@ -1,5 +1,6 @@
 #include "gvd.h"
 #include "log.h"
+#include "env.h"
 
 #include <cassert>
 #include <jni.h>
@@ -39,6 +40,8 @@ typedef struct {
 
 	std::vector<Swapchain> colour_swapchains;
 	std::vector<Swapchain> depth_swapchains;
+
+	mist_env_t env;
 } state_t;
 
 static XrBool32 debug_utils_messenger_cb(
@@ -138,115 +141,6 @@ static void gl_debug_cb(GLenum source, GLenum type, GLuint id, GLenum severity, 
 	__android_log_print(sev, "mist-log", "    Severity: %s", severity_str);
 }
 
-static bool render_views(
-	state_t* s,
-	XrFrameState* frame_state,
-	XrCompositionLayerProjection& layer_proj,
-	std::vector<XrCompositionLayerProjectionView>& layer_proj_views
-) {
-	// Locate views (i.e. get their poses and FOVs) within the reference space.
-
-	XrViewState view_state = {XR_TYPE_VIEW_STATE};
-
-	XrViewLocateInfo view_locate = {
-		.type = XR_TYPE_VIEW_LOCATE_INFO,
-		.viewConfigurationType = s->view_config,
-		.displayTime = frame_state->predictedDisplayTime,
-		.space = s->local_space,
-	};
-
-	uint32_t _ = 0;
-	auto views = std::vector<XrView>(s->view_config_views.size(), {XR_TYPE_VIEW});
-
-	if (xrLocateViews(s->session, &view_locate, &view_state, views.size(), &_, views.data()) != XR_SUCCESS) {
-		LOGE("Failed to locate views.");
-		return false;
-	}
-
-	// clang-format off
-	layer_proj_views = std::vector<XrCompositionLayerProjectionView>(views.size(), {
-		.type = XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW,
-		.subImage = {
-			.imageRect = {
-				.offset = {
-					.x = 0,
-					.y = 0,
-				},
-			},
-			.imageArrayIndex = 0, // XXX Will be useful when we do multiview rendering.
-		},
-	});
-	// clang-format on
-
-	for (size_t i = 0; i < views.size(); i++) {
-		Swapchain& colour_swapchain = s->colour_swapchains[i];
-		Swapchain& depth_swapchain = s->depth_swapchains[i];
-
-		// Acquire and get index of the next image we have to take from the swapchain.
-
-		uint32_t colour_image_index = 0;
-		uint32_t depth_image_index = 0;
-
-		XrSwapchainImageAcquireInfo acquire_info = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
-
-		assert(xrAcquireSwapchainImage(colour_swapchain.swapchain, &acquire_info, &colour_image_index) == XR_SUCCESS);
-		assert(xrAcquireSwapchainImage(depth_swapchain.swapchain, &acquire_info, &depth_image_index) == XR_SUCCESS);
-
-		// Now, wait (forever) for that image to be available.
-
-		XrSwapchainImageWaitInfo wait_info = {
-			.type = XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO,
-			.timeout = XR_INFINITE_DURATION,
-		};
-
-		assert(xrWaitSwapchainImage(colour_swapchain.swapchain, &wait_info) == XR_SUCCESS);
-		assert(xrWaitSwapchainImage(depth_swapchain.swapchain, &wait_info) == XR_SUCCESS);
-
-		// Get width/height, create layer projection view entry, and set the viewport size.
-
-		uint32_t const width = s->view_config_views[i].recommendedImageRectWidth;
-		uint32_t const height = s->view_config_views[i].recommendedImageRectHeight;
-
-		layer_proj_views[i].pose = views[i].pose;
-		layer_proj_views[i].fov = views[i].fov;
-		layer_proj_views[i].subImage.swapchain = colour_swapchain.swapchain;
-		layer_proj_views[i].subImage.imageRect.extent.width = width;
-		layer_proj_views[i].subImage.imageRect.extent.height = height;
-
-		// Actually render to this layer.
-
-		glBindFramebuffer(GL_FRAMEBUFFER, colour_swapchain.image_views[colour_image_index]);
-		glClearColor(1.0, 0.0, 1.0, 1.0);
-		glClear(GL_COLOR_BUFFER_BIT);
-
-		glBindFramebuffer(GL_FRAMEBUFFER, depth_swapchain.image_views[depth_image_index]);
-		glClearDepthf(1.0);
-		glClear(GL_DEPTH_BUFFER_BIT);
-
-		// TODO Give this block a name.
-
-		glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colour_swapchain.images[colour_image_index], 0);
-
-		if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-			LOGE("incomplete framebuffer");
-		}
-
-		glViewport(0, 0, width, height);
-		glScissor(0, 0, width, height);
-
-		// Finally, give swapchain image back to OpenXR, allowing compositor to use the image again.
-
-		XrSwapchainImageReleaseInfo release_info = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-		assert(xrReleaseSwapchainImage(colour_swapchain.swapchain, &release_info) == XR_SUCCESS);
-		assert(xrReleaseSwapchainImage(depth_swapchain.swapchain, &release_info) == XR_SUCCESS);
-	}
-
-	layer_proj.viewCount = layer_proj_views.size();
-	layer_proj.views = layer_proj_views.data();
-
-	return true;
-}
-
 static void render(state_t* s) {
 	// Wait for a frame.
 
@@ -263,22 +157,16 @@ static void render(state_t* s) {
 
 	auto layers = std::vector<XrCompositionLayerBaseHeader*>();
 
-	XrCompositionLayerProjection layer_proj = {
-		.type = XR_TYPE_COMPOSITION_LAYER_PROJECTION,
-		.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT | XR_COMPOSITION_LAYER_CORRECT_CHROMATIC_ABERRATION_BIT,
-		.space = s->local_space,
-	};
-
-	std::vector<XrCompositionLayerProjectionView> layer_proj_views;
-
 	bool const active = s->session_state == XR_SESSION_STATE_SYNCHRONIZED || s->session_state == XR_SESSION_STATE_VISIBLE || s->session_state == XR_SESSION_STATE_FOCUSED;
 	bool rendered = false;
 
+	XrCompositionLayerEquirect2KHR layer_env;
+
 	if (active && frame_state.shouldRender) {
-		rendered = render_views(s, &frame_state, layer_proj, layer_proj_views);
+		rendered = mist_env_render(&s->env, s->local_space, &layer_env) == 0;
 
 		if (rendered) {
-			layers.push_back(reinterpret_cast<XrCompositionLayerBaseHeader*>(&layer_proj));
+			layers.push_back(reinterpret_cast<XrCompositionLayerBaseHeader*>(&layer_env));
 		}
 	}
 
@@ -413,6 +301,7 @@ void android_main(struct android_app* app) {
 	auto required_exts = std::vector {
 		XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME,
 		XR_EXT_DEBUG_UTILS_EXTENSION_NAME,
+		XR_KHR_COMPOSITION_LAYER_EQUIRECT2_EXTENSION_NAME,
 	};
 
 	for (auto& ext : exts) {
@@ -786,7 +675,7 @@ void android_main(struct android_app* app) {
 		// Colour swapchain.
 
 		Swapchain& colour_swapchain = s.colour_swapchains[i];
-		colour_swapchain.format = GL_SRGB8_ALPHA8; // TODO Get this from supported swapchain formats (see GetSupportedColorSwapchainFormats and m_graphicsAPI->SelectColorSwapchainFormat(formats)).
+		colour_swapchain.format = GL_RGBA8; // TODO Get this from supported swapchain formats (see GetSupportedColorSwapchainFormats and m_graphicsAPI->SelectColorSwapchainFormat(formats)).
 
 		XrSwapchainCreateInfo const colour_create_info = {
 			.type = XR_TYPE_SWAPCHAIN_CREATE_INFO,
@@ -918,6 +807,12 @@ void android_main(struct android_app* app) {
 
 	if (xrCreateReferenceSpace(s.session, &ref_space_create, &s.local_space) != XR_SUCCESS) {
 		LOGE("Failed to create OpenXR local reference space.");
+		return;
+	}
+
+	// Create Mist environment.
+
+	if (mist_env_create(&s.env, s.session, app->activity->assetManager, "serenity") < 0) {
 		return;
 	}
 
