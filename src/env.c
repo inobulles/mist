@@ -105,20 +105,6 @@ int mist_env_create(mist_env_t* env, XrSession session, AAssetManager* mgr, char
 		goto err_decode;
 	}
 
-	// Create OpenGL texture.
-	// TODO Are mipmaps necessary in this case? At what stage is the mipmap even chosen? My guess is that nothing will happen as when we render to a framebuffer it has no knowledge of how far away the pixels are being rendered by the OpenXR compositor.
-	// TODO Don't know if I have to keep this around or if I can just free this.
-
-	glGenTextures(1, &env->equirect_tex);
-	glBindTexture(GL_TEXTURE_2D, env->equirect_tex);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, env->equirect_y_res, env->equirect_y_res, 0, GL_RGBA, GL_UNSIGNED_BYTE, buf);
-	glGenerateMipmap(GL_TEXTURE_2D);
-
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
 	// Create swapchain.
 
 	XrSwapchainCreateInfo const swapchain_create = {
@@ -141,42 +127,28 @@ int mist_env_create(mist_env_t* env, XrSession session, AAssetManager* mgr, char
 
 	// Get swapchain images.
 
-	if (xrEnumerateSwapchainImages(env->equirect_swapchain, 0, &env->equirect_swapchain_image_count, NULL) != XR_SUCCESS) {
+	uint32_t image_count;
+
+	if (xrEnumerateSwapchainImages(env->equirect_swapchain, 0, &image_count, NULL) != XR_SUCCESS) {
 		LOGE("Failed to enumerate swapchain images for %s.", name);
 		goto err_enum_images;
 	}
 
-	XrSwapchainImageOpenGLESKHR* const images = calloc(env->equirect_swapchain_image_count, sizeof *images);
+	XrSwapchainImageOpenGLESKHR* const images = calloc(image_count, sizeof *images);
 	assert(images != NULL);
 
-	for (size_t i = 0; i < env->equirect_swapchain_image_count; i++) {
+	for (size_t i = 0; i < image_count; i++) {
 		images[i].type = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR;
 	}
 
-	if (xrEnumerateSwapchainImages(env->equirect_swapchain, env->equirect_swapchain_image_count, &env->equirect_swapchain_image_count, (XrSwapchainImageBaseHeader*) images) != XR_SUCCESS) {
+	if (xrEnumerateSwapchainImages(env->equirect_swapchain, image_count, &image_count, (XrSwapchainImageBaseHeader*) images) != XR_SUCCESS) {
 		LOGE("Failed to enumerate swapchain images for %s.", name);
 		goto err_enum_images2;
 	}
 
-	// Create framebuffers for each swapchain image.
+	// Write texture to each swapchain image.
 
-	env->equirect_fbos = malloc(env->equirect_swapchain_image_count * sizeof *env->equirect_fbos);
-	assert(env->equirect_fbos != NULL);
-	glGenFramebuffers(env->equirect_swapchain_image_count, env->equirect_fbos);
-
-	for (size_t i = 0; i < env->equirect_swapchain_image_count; i++) {
-		// glBindFramebuffer(GL_FRAMEBUFFER, env->equirect_fbos[i]);
-		// glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, (GLuint) images[i].image, 0);
-
-		// if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-		// 	LOGE("Framebuffer not complete!");
-		// }
-
-		// Also render to each image FBO already, because this will not change much anyway.
-
-		glClearColor(0.0, 1.0, 1.0, 1.0);
-		glClear(GL_COLOR_BUFFER_BIT);
-
+	for (size_t i = 0; i < image_count; i++) {
 		glBindTexture(GL_TEXTURE_2D, (GLuint) images[i].image);
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, env->equirect_x_res, env->equirect_y_res, GL_RGBA, GL_UNSIGNED_BYTE, buf);
 	}
@@ -184,10 +156,6 @@ int mist_env_create(mist_env_t* env, XrSession session, AAssetManager* mgr, char
 	// Cleanup.
 
 	rv = 0;
-
-	if (rv != 0) {
-		glDeleteFramebuffers(env->equirect_swapchain_image_count, env->equirect_fbos);
-	}
 
 err_enum_images2:
 
@@ -200,10 +168,6 @@ err_enum_images:
 	}
 
 err_create_swapchain:
-
-	if (rv != 0) {
-		glDeleteTextures(1, &env->equirect_tex);
-	}
 
 	free(buf);
 

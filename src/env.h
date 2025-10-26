@@ -17,11 +17,7 @@ typedef struct {
 	uint32_t equirect_x_res;
 	uint32_t equirect_y_res;
 
-	GLuint equirect_tex;
 	XrSwapchain equirect_swapchain;
-
-	uint32_t equirect_swapchain_image_count;
-	GLuint* equirect_fbos;
 } mist_env_t;
 
 #if defined(__cplusplus)
