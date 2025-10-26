@@ -41,6 +41,13 @@ $INTERCEPT_BUILD $CC \
 	-fPIC \
 	-c src/gvd.c -o .out/gvd.o
 
+$INTERCEPT_BUILD $CC \
+	-Wall \
+	-I$NATIVE_APP_GLUE_PATH -I$OPENXR_SDK/build/include -Isrc/glad/include \
+	--sysroot=$TOOLCHAIN_PATH/sysroot \
+	-fPIC \
+	-c src/env.c -o .out/env.o
+
 $INTERCEPT_BUILD $CXX \
 	-Wall \
 	-I$NATIVE_APP_GLUE_PATH -I$OPENXR_SDK/build/include -Isrc/glad/include \
@@ -54,7 +61,7 @@ fi
 
 $CXX \
 	-I $NATIVE_APP_GLUE_PATH -L.out/apk_stage/lib/$ABI -shared \
-	.out/main.o .out/glad.o .out/gvd.o -o .out/apk_stage/lib/$ABI/libmain.so \
+	.out/main.o .out/glad.o .out/gvd.o .out/env.o -o .out/apk_stage/lib/$ABI/libmain.so \
 	-llog -lopenxr_loader -landroid -lEGL .out/native_app_glue.o
 
 # Copy all the AQUA stuff.
