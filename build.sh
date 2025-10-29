@@ -40,37 +40,44 @@ cp $TOOLCHAIN_PATH/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so .out/a
 # Build the program itself.
 # This is simply a shared library loaded presumably somewhere in the JVM.
 
-$INTERCEPT_BUILD $CC \
-	-Wall \
-	-I$NATIVE_APP_GLUE_PATH \
-	--sysroot=$TOOLCHAIN_PATH/sysroot \
-	-fPIC \
-	-c src/gvd.c -o .out/gvd.o
+echo "Build objs."
 
-$INTERCEPT_BUILD $CC \
-	-Wall \
-	-I$NATIVE_APP_GLUE_PATH -I$OPENXR_SDK/build/include -Isrc/glad/include \
-	--sysroot=$TOOLCHAIN_PATH/sysroot \
-	-fPIC \
-	-c src/env.c -o .out/env.o
+objs=
+
+for src in gvd env shader win; do
+	$INTERCEPT_BUILD $CC \
+		-Wall \
+		-I$NATIVE_APP_GLUE_PATH -I$OPENXR_SDK/build/include -Isrc/glad/include \
+		--sysroot=$TOOLCHAIN_PATH/sysroot \
+		-fPIC \
+		-c src/$src.c -o .out/$src.o &
+
+	objs="$objs .out/$src.o"
+done
+
+if [ ! -f .out/glad.o ]; then
+	$CC -Isrc/glad/include -fPIC -c src/glad/src/gles2.c -o .out/glad.o &
+	objs="$objs .out/glad.o"
+fi
 
 $INTERCEPT_BUILD $CXX \
 	-Wall \
 	-I$NATIVE_APP_GLUE_PATH -I$OPENXR_SDK/build/include -Isrc/glad/include \
 	--sysroot=$TOOLCHAIN_PATH/sysroot \
 	-fPIC \
-	-c src/main.cpp -o .out/main.o
+	-c src/main.cpp -o .out/main.o &
 
-if [ ! -f .out/glad.o ]; then
-	$CC -Isrc/glad/include -fPIC -c src/glad/src/gles2.c -o .out/glad.o
-fi
+objs="$objs .out/main.o"
+wait
+
+echo "Link."
 
 $CXX \
 	-I $NATIVE_APP_GLUE_PATH -L.out/apk_stage/lib/$ABI -shared \
-	.out/main.o .out/glad.o .out/gvd.o .out/env.o -o .out/apk_stage/lib/$ABI/libmain.so \
+	$objs -o .out/apk_stage/lib/$ABI/libmain.so \
 	-llog -lopenxr_loader -landroid -lEGL .out/native_app_glue.o
 
-# Install all the AQUA stuff.
+echo "Install AQUA stuff."
 
 export CC
 export AR
@@ -79,7 +86,8 @@ export BOB_TARGET=arm64-android
 bob -p assets -C $AQUA/gv install
 bob -p assets -C $AQUA/vdev/vr install
 
-# Generate the APK.
+echo "Generate the APK."
+
 # keytool comes from jdk21-openjdk on Arch.
 
 if [ ! -f .out/debug.keystore ]; then
@@ -93,9 +101,12 @@ if [ ! -f .out/debug.keystore ]; then
 fi
 
 # This LD_PRELOAD exists for when running on FreeBSD.
+# TODO I think we can drastically speed up AAPT2 by modifying an existing APK instead of creating a new one each time.
 
 LD_PRELOAD=$BUILD_TOOLS_PATH/lib64/libc++.so $AAPT package -f \
 	-M AndroidManifest.xml -I $PLATFORM_PATH/android.jar -A assets \
 	-F .out/Mist.apk .out/apk_stage
+
+echo "Sign the APK."
 
 $APKSIGNER sign --ks .out/debug.keystore --ks-pass pass:123456 .out/Mist.apk
