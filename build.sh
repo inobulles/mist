@@ -64,11 +64,14 @@ $CXX \
 	.out/main.o .out/glad.o .out/gvd.o .out/env.o -o .out/apk_stage/lib/$ABI/libmain.so \
 	-llog -lopenxr_loader -landroid -lEGL .out/native_app_glue.o
 
-# Copy all the AQUA stuff.
+# Install all the AQUA stuff.
 
-cp $AQUA/gv/.bob/prefix/bin/gvd assets/bin
-cp $AQUA/gv/.bob/prefix/lib/libumber.so assets/lib
-cp $AQUA/gv/.bob/prefix/lib/libvdriver_loader.so assets/lib
+export CC
+export AR
+export BOB_TARGET=arm64-android
+
+bob -p assets -C $AQUA/gv install
+bob -p assets -C $AQUA/vdev/vr install
 
 # Generate the APK.
 # keytool comes from jdk21-openjdk on Arch.
