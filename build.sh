@@ -6,6 +6,12 @@ set -e
 
 . ./config.sh
 
+# If on FreeBSD, make sure linux64 is loaded.
+
+if [ "$(uname)" = "FreeBSD" ] && [ "$(kldstat | grep linux64)" = "" ]; then
+	doas kldload linux64
+fi
+
 # Create directories.
 
 mkdir -p .out
