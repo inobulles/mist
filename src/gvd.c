@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 #include <unistd.h>
 #include <wait.h>
 
@@ -109,6 +110,83 @@ static int get_default_ifname(char* out_ifname, size_t len) {
 	return 0;
 }
 
+static void* vr_vdev_conn_listener_thread(void* arg) {
+	LOGI("%s: Create server UDS.", __func__);
+	int const server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+
+	if (server_fd < 0) {
+		LOGE("socket(AF_UNIX): %s", strerror(errno));
+		return NULL;
+	}
+
+	LOGI("%s: Bind.", __func__);
+	char const* const spec = "aquabsd.black.vr";
+
+	struct sockaddr_un addr = {0};
+	addr.sun_family = AF_UNIX;
+	addr.sun_path[0] = '\0'; // Abstract UDS.
+	strncpy(addr.sun_path + 1, spec, sizeof addr.sun_path - 1);
+
+	if (bind(server_fd, (struct sockaddr*) &addr, sizeof addr) < 0) {
+		LOGE("bind: %s", strerror(errno));
+		close(server_fd);
+		return NULL;
+	}
+
+	LOGI("%s: Listen.", __func__);
+
+	if (listen(server_fd, 1) < 0) {
+		LOGE("listen: %s", strerror(errno));
+		close(server_fd);
+		return NULL;
+	}
+
+	LOGI("%s: Waiting for connection to accept.", __func__);
+	int const client_fd = accept(server_fd, NULL, NULL);
+
+	if (client_fd < 0) {
+		LOGE("accept: %s", strerror(errno));
+		return NULL;
+	}
+
+	LOGI("%s: Waiting for message.", __func__);
+
+	uint64_t vdev_id = 0;
+	char control[CMSG_SPACE(sizeof(int))] = {0};
+
+	struct iovec io = {
+		.iov_base = &vdev_id,
+		.iov_len = sizeof vdev_id
+	};
+
+	struct msghdr msg = {
+		.msg_iov = &io,
+		.msg_iovlen = 1,
+		.msg_control = control,
+		.msg_controllen = sizeof control,
+	};
+
+	if (recvmsg(client_fd, &msg, 0) < 0) {
+		LOGE("recvmsg: %s", strerror(errno));
+		return NULL;
+	}
+
+	int received_fd = -1;
+	struct cmsghdr* const cmsg = CMSG_FIRSTHDR(&msg);
+
+	if (cmsg && cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
+		memcpy(&received_fd, CMSG_DATA(cmsg), sizeof received_fd);
+	}
+
+	LOGE("received_fd %d, vdev_id %lu", received_fd, vdev_id);
+
+	close(received_fd);
+	close(client_fd);
+	close(server_fd);
+
+	return NULL;
+}
+
 typedef struct {
 	int fd;
 	char const* stream_name;
@@ -143,6 +221,8 @@ static void* log_reader_thread(void* arg) {
 		}
 	}
 
+	LOGE("No more output on %s!", args->stream_name);
+
 	free(line);
 	fclose(fp);
 	close(args->fd);
@@ -155,6 +235,7 @@ void start_gvd(AAssetManager* mgr) {
 
 	mkdir("/data/data/com.inobulles.mist/files/bin", 0755);
 	mkdir("/data/data/com.inobulles.mist/files/lib", 0755);
+	mkdir("/data/data/com.inobulles.mist/files/lib/vdriver", 0755);
 	mkdir("/data/data/com.inobulles.mist/files/tmp", 0755);
 
 	// Extract gvd binary and supporting stuff.
@@ -164,6 +245,7 @@ void start_gvd(AAssetManager* mgr) {
 	extract(mgr, "bin/gvd", gvd_path);
 	extract(mgr, "lib/libumber.so", NULL);
 	extract(mgr, "lib/libvdriver_loader.so", NULL);
+	extract(mgr, "lib/vdriver/aquabsd.black.vr.vdriver", NULL);
 
 	// Get default interface name.
 
@@ -206,6 +288,7 @@ void start_gvd(AAssetManager* mgr) {
 		(char*) "GV_NODES_PATH=/data/data/com.inobulles.mist/files/tmp/gv.nodes",
 		(char*) "GV_LOCK_PATH=/data/data/com.inobulles.mist/files/tmp/gv.lock",
 		(char*) "GV_HOST_ID_PATH=/data/data/com.inobulles.mist/files/tmp/gv.host_id",
+		(char*) "VDRIVER_PATH=/data/data/com.inobulles.mist/files/lib/vdriver",
 		NULL,
 	};
 
@@ -235,4 +318,9 @@ void start_gvd(AAssetManager* mgr) {
 	posix_spawn_file_actions_destroy(&actions);
 
 	// Don't close other end of pipes here because log reader threads are still using them!
+
+	// Start thread for waiting for VDEV connections.
+
+	pthread_t vr_vdev_conn_listener;
+	pthread_create(&vr_vdev_conn_listener, NULL, vr_vdev_conn_listener_thread, NULL);
 }
