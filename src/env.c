@@ -148,7 +148,8 @@ int mist_env_create(mist_env_t* env, XrSession session, AAssetManager* mgr, char
 	// Write texture to each swapchain image.
 
 	for (size_t i = 0; i < image_count; i++) {
-		glBindTexture(GL_TEXTURE_2D, (GLuint) images[i].image);
+		env->equirect_tex = (GLuint) images[i].image;
+		glBindTexture(GL_TEXTURE_2D, env->equirect_tex);
 		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, env->equirect_x_res, env->equirect_y_res, GL_RGBA, GL_UNSIGNED_BYTE, buf);
 	}
 
