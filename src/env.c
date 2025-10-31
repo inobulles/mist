@@ -93,12 +93,11 @@ int mist_env_create(mist_env_t* env, XrSession session, AAssetManager* mgr, char
 	}
 
 	// Decode image from memory.
-	// TODO Explicit casts necessary in C? clangd is annoying me because it thinks this is C++.
 
 	stbi_set_flip_vertically_on_load(true);
 
 	int channels;
-	void* const buf = stbi_load_from_memory((stbi_uc const*) asset_buf, (int) asset_size, (int*) &env->equirect_x_res, (int*) &env->equirect_y_res, &channels, STBI_rgb_alpha);
+	void* const buf = stbi_load_from_memory(asset_buf, asset_size, (int*) &env->equirect_x_res, (int*) &env->equirect_y_res, &channels, STBI_rgb_alpha);
 
 	if (buf == NULL) {
 		LOGE("Failed to decode image %s.", name);
