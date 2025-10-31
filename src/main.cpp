@@ -1,6 +1,7 @@
 #include "gvd.h"
 #include "log.h"
 #include "env.h"
+#include "desktop.h"
 
 #include <cassert>
 #include <jni.h>
@@ -19,13 +20,6 @@
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
-struct Swapchain {
-	XrSwapchain swapchain = XR_NULL_HANDLE;
-	int64_t format = 0;
-	std::vector<GLuint> images;
-	std::vector<GLuint> image_views;
-};
-
 typedef struct {
 	struct android_app* app;
 	bool resumed;
@@ -38,10 +32,8 @@ typedef struct {
 	XrEnvironmentBlendMode env_blend_mode;
 	XrSpace local_space;
 
-	std::vector<Swapchain> colour_swapchains;
-	std::vector<Swapchain> depth_swapchains;
-
 	mist_env_t env;
+	desktop_t desktop;
 } state_t;
 
 static XrBool32 debug_utils_messenger_cb(
@@ -158,15 +150,19 @@ static void render(state_t* s) {
 	auto layers = std::vector<XrCompositionLayerBaseHeader*>();
 
 	bool const active = s->session_state == XR_SESSION_STATE_SYNCHRONIZED || s->session_state == XR_SESSION_STATE_VISIBLE || s->session_state == XR_SESSION_STATE_FOCUSED;
-	bool rendered = false;
 
 	XrCompositionLayerEquirect2KHR layer_env;
+	XrCompositionLayerProjection layer_desktop;
+
+	XrCompositionLayerProjectionView* layer_views = NULL;
 
 	if (active && frame_state.shouldRender) {
-		rendered = mist_env_render(&s->env, s->local_space, &layer_env) == 0;
-
-		if (rendered) {
+		if (mist_env_render(&s->env, s->local_space, &layer_env) == 0) {
 			layers.push_back(reinterpret_cast<XrCompositionLayerBaseHeader*>(&layer_env));
+		}
+
+		if (desktop_render(&s->desktop, s->local_space, s->view_config, frame_state.predictedDisplayTime, &layer_desktop, &layer_views) == 0) {
+			layers.push_back(reinterpret_cast<XrCompositionLayerBaseHeader*>(&layer_desktop));
 		}
 	}
 
@@ -185,6 +181,10 @@ static void render(state_t* s) {
 	if (res != XR_SUCCESS) {
 		LOGE("Failed to render frame: %d", res);
 	}
+
+	// Clean up.
+
+	free(layer_views);
 }
 
 static void android_handle_cmd(struct android_app* app, int32_t cmd) {
@@ -664,107 +664,6 @@ void android_main(struct android_app* app) {
 	int64_t const format = formats[0]; // First one is our OpenXR runtime's preference.
 	LOGI("Selecting OpenXR format 0x%lx (runtime preference).", format);
 
-	// Create the swapchains (one for each view, and one for colour and depth).
-
-	s.colour_swapchains = std::vector<Swapchain>(s.view_config_views.size());
-	s.depth_swapchains = std::vector<Swapchain>(s.view_config_views.size());
-
-	for (size_t i = 0; i < s.view_config_views.size(); i++) {
-		auto view_config_view = s.view_config_views[i];
-
-		// Colour swapchain.
-
-		Swapchain& colour_swapchain = s.colour_swapchains[i];
-		colour_swapchain.format = GL_RGBA8; // TODO Get this from supported swapchain formats (see GetSupportedColorSwapchainFormats and m_graphicsAPI->SelectColorSwapchainFormat(formats)).
-
-		XrSwapchainCreateInfo const colour_create_info = {
-			.type = XR_TYPE_SWAPCHAIN_CREATE_INFO,
-			.createFlags = 0,
-			.usageFlags = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT,
-			.format = colour_swapchain.format,
-			.sampleCount = view_config_view.recommendedSwapchainSampleCount,
-			.width = view_config_view.recommendedImageRectWidth,
-			.height = view_config_view.recommendedImageRectHeight,
-			.faceCount = 1,
-			.arraySize = 1,
-			.mipCount = 1,
-		};
-
-		assert(xrCreateSwapchain(s.session, &colour_create_info, &colour_swapchain.swapchain) == XR_SUCCESS);
-
-		// Depth swapchain.
-
-		Swapchain& depth_swapchain = s.depth_swapchains[i];
-		depth_swapchain.format = GL_DEPTH_COMPONENT16; // TODO Get this from supported swapchain formats (see GetSupportedColorSwapchainFormats and m_graphicsAPI->SelectColorSwapchainFormat(formats)).
-
-		XrSwapchainCreateInfo const depth_create_info = {
-			.type = XR_TYPE_SWAPCHAIN_CREATE_INFO,
-			.createFlags = 0,
-			.usageFlags = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-			.format = depth_swapchain.format,
-			.sampleCount = view_config_view.recommendedSwapchainSampleCount,
-			.width = view_config_view.recommendedImageRectWidth,
-			.height = view_config_view.recommendedImageRectHeight,
-			.faceCount = 1,
-			.arraySize = 1,
-			.mipCount = 1,
-		};
-
-		assert(xrCreateSwapchain(s.session, &depth_create_info, &depth_swapchain.swapchain) == XR_SUCCESS);
-
-		// Get the colour swapchain images.
-
-		uint32_t colour_image_count = 0;
-		assert(xrEnumerateSwapchainImages(colour_swapchain.swapchain, 0, &colour_image_count, nullptr) == XR_SUCCESS);
-		auto colour_images = std::vector<XrSwapchainImageOpenGLESKHR>(colour_image_count, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR});
-		assert(xrEnumerateSwapchainImages(colour_swapchain.swapchain, colour_image_count, &colour_image_count, (XrSwapchainImageBaseHeader*) colour_images.data()) == XR_SUCCESS);
-
-		// Get the depth swapchain images.
-
-		uint32_t depth_image_count = 0;
-		assert(xrEnumerateSwapchainImages(depth_swapchain.swapchain, 0, &depth_image_count, nullptr) == XR_SUCCESS);
-		auto depth_images = std::vector<XrSwapchainImageOpenGLESKHR>(depth_image_count, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR});
-		assert(xrEnumerateSwapchainImages(depth_swapchain.swapchain, depth_image_count, &depth_image_count, (XrSwapchainImageBaseHeader*) depth_images.data()) == XR_SUCCESS);
-
-		// Create framebuffers for colour swapchain images.
-
-		colour_swapchain.image_views = std::vector<GLuint>();
-		colour_swapchain.images = std::vector<GLuint>();
-
-		for (auto& image : colour_images) {
-			GLuint fbo = 0;
-			glGenFramebuffers(1, &fbo);
-			glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-
-			// XXX When we move on to using multiview, we should use glFramebufferTextureMultiviewOVR here.
-
-			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, (GLuint) image.image, 0);
-			assert(glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
-
-			colour_swapchain.images.push_back(image.image);
-			colour_swapchain.image_views.push_back(fbo);
-		}
-
-		// Create framebuffers for depth swapchain images.
-
-		depth_swapchain.image_views = std::vector<GLuint>();
-		depth_swapchain.images = std::vector<GLuint>();
-
-		for (auto& image : depth_images) {
-			GLuint fbo = 0;
-			glGenFramebuffers(1, &fbo);
-			glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-
-			// XXX When we move on to using multiview, we should use glFramebufferTextureMultiviewOVR here.
-
-			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, (GLuint) image.image, 0);
-			assert(glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
-
-			depth_swapchain.images.push_back(image.image);
-			depth_swapchain.image_views.push_back(fbo);
-		}
-	}
-
 	// Get environment blend modes and select one.
 
 	uint32_t env_blend_mode_count = 0;
@@ -813,6 +712,12 @@ void android_main(struct android_app* app) {
 	// Create Mist environment.
 
 	if (mist_env_create(&s.env, s.session, app->activity->assetManager, "serenity") < 0) {
+		return;
+	}
+
+	// Create Mist desktop.
+
+	if (desktop_create(&s.desktop, s.session, s.view_config_views.size(), s.view_config_views.data(), &s.env) < 0) {
 		return;
 	}
 
@@ -944,6 +849,8 @@ void android_main(struct android_app* app) {
 	}
 
 	// Cleanup.
+
+	desktop_destroy(&s.desktop);
 
 	xrDestroySession(s.session);
 	xrDestroyInstance(inst);
