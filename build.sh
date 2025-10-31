@@ -44,8 +44,8 @@ echo "Build objs."
 
 objs=
 
-for src in gvd env shader win; do
-	$INTERCEPT_BUILD $CC \
+for src in gvd env shader win desktop; do
+	$CC \
 		-Wall \
 		-I$NATIVE_APP_GLUE_PATH -I$OPENXR_SDK/build/include -Isrc/glad/include \
 		--sysroot=$TOOLCHAIN_PATH/sysroot \
@@ -57,10 +57,11 @@ done
 
 if [ ! -f .out/glad.o ]; then
 	$CC -Isrc/glad/include -fPIC -c src/glad/src/gles2.c -o .out/glad.o &
-	objs="$objs .out/glad.o"
 fi
 
-$INTERCEPT_BUILD $CXX \
+objs="$objs .out/glad.o"
+
+$CXX \
 	-Wall \
 	-I$NATIVE_APP_GLUE_PATH -I$OPENXR_SDK/build/include -Isrc/glad/include \
 	--sysroot=$TOOLCHAIN_PATH/sysroot \
@@ -110,3 +111,5 @@ LD_PRELOAD=$BUILD_TOOLS_PATH/lib64/libc++.so $AAPT package -f \
 echo "Sign the APK."
 
 $APKSIGNER sign --ks .out/debug.keystore --ks-pass pass:123456 .out/Mist.apk
+
+echo "Built!"
