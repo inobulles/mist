@@ -37,6 +37,17 @@ cp $OPENXR_SDK/build/src/api_layers/XrApiLayer_*.json assets/openxr/1/api_layers
 
 cp $TOOLCHAIN_PATH/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so .out/apk_stage/lib/$ABI
 
+# Build AQUA stuff.
+
+echo "Build AQUA stuff."
+
+export CC
+export AR
+export BOB_TARGET=arm64-android
+
+bob -p assets -C $AQUA/gv install
+bob -p assets -C $AQUA/vdev/vr install
+
 # Build the program itself.
 # This is simply a shared library loaded presumably somewhere in the JVM.
 
@@ -47,7 +58,7 @@ objs=
 for src in gvd env shader win desktop; do
 	$CC \
 		-Wall \
-		-I$NATIVE_APP_GLUE_PATH -I$OPENXR_SDK/build/include -Isrc/glad/include \
+		-I$NATIVE_APP_GLUE_PATH -I$OPENXR_SDK/build/include -Isrc/glad/include -Iassets/include \
 		--sysroot=$TOOLCHAIN_PATH/sysroot \
 		-fPIC \
 		-c src/$src.c -o .out/$src.o &
@@ -77,15 +88,6 @@ $CXX \
 	-I $NATIVE_APP_GLUE_PATH -L.out/apk_stage/lib/$ABI -shared \
 	$objs -o .out/apk_stage/lib/$ABI/libmain.so \
 	-llog -lopenxr_loader -landroid -lEGL .out/native_app_glue.o
-
-echo "Install AQUA stuff."
-
-export CC
-export AR
-export BOB_TARGET=arm64-android
-
-bob -p assets -C $AQUA/gv install
-bob -p assets -C $AQUA/vdev/vr install
 
 echo "Generate the APK."
 
