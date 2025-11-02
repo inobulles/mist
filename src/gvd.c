@@ -1,5 +1,7 @@
 #include "log.h"
 
+#include <aqua/gv_agent.h>
+
 #include <arpa/inet.h>
 #include <assert.h>
 #include <errno.h>
@@ -178,11 +180,20 @@ static void* vr_vdev_conn_listener_thread(void* arg) {
 		memcpy(&received_fd, CMSG_DATA(cmsg), sizeof received_fd);
 	}
 
-	LOGE("received_fd %d, vdev_id %lu", received_fd, vdev_id);
-
-	close(received_fd);
 	close(client_fd);
 	close(server_fd);
+
+	gv_agent_t* const agent = gv_agent_create(received_fd, "aquabsd.black.vr", vdev_id);
+
+	if (agent == NULL) {
+		LOGE("Failed to create GrapeVine KOS agent.");
+		return NULL;
+	}
+
+	gv_agent_loop(agent);
+
+	gv_agent_destroy(agent);
+	close(received_fd);
 
 	return NULL;
 }
