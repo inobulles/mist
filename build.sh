@@ -1,5 +1,5 @@
 #!/bin/sh
-set -e
+set -xe
 
 # TODO I would like an Android class or something for Bob the Builder. That would be pretty cool.
 # This script also works on FreeBSD through the Linuxulator (I know :o).
@@ -15,7 +15,7 @@ fi
 # Create directories.
 
 mkdir -p .out
-rm -r .out/apk_stage
+rm -rf .out/apk_stage
 mkdir -p .out/apk_stage
 mkdir -p .out/apk_stage/lib/$ABI
 
@@ -47,6 +47,11 @@ export BOB_TARGET=arm64-android
 
 bob -p assets -C $AQUA/gv install
 bob -p assets -C $AQUA/vdev/vr install
+
+cp assets/lib/libgv_agent.so .out/apk_stage/lib/arm64-v8a
+cp assets/lib/libaqua.so .out/apk_stage/lib/arm64-v8a
+cp assets/lib/libumber.so .out/apk_stage/lib/arm64-v8a
+cp assets/lib/libvdriver_loader.so .out/apk_stage/lib/arm64-v8a
 
 # Build the program itself.
 # This is simply a shared library loaded presumably somewhere in the JVM.
