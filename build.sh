@@ -92,7 +92,7 @@ echo "Link."
 $CXX \
 	-I $NATIVE_APP_GLUE_PATH -L.out/apk_stage/lib/$ABI -shared \
 	$objs -o .out/apk_stage/lib/$ABI/libmain.so \
-	-llog -lopenxr_loader -landroid -lEGL .out/native_app_glue.o
+	-llog -lopenxr_loader -landroid -lEGL -lgv_agent .out/native_app_glue.o
 
 echo "Generate the APK."
 
