@@ -43,6 +43,7 @@ typedef struct {
 	GLuint win_proj_uniform;
 	GLuint win_camera_pos_uniform;
 	GLuint win_env_sampler_uniform;
+	GLuint win_sampler_uniform;
 } desktop_t;
 
 #if defined(__cplusplus)

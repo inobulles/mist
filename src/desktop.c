@@ -7,8 +7,6 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-// TODO I think a window could have 
-
 #define MULTILINE(...) #__VA_ARGS__
 #pragma clang diagnostic ignored "-Wunknown-escape-sequence"
 
@@ -19,7 +17,7 @@ precision highp float;
 
 layout(location = 0) in vec3 pos;
 layout(location = 1) in vec2 tex_coord;
-// layout(location = 2) in vec3 normal;
+layout(location = 2) in vec3 normal;
 
 uniform mat4 model;
 uniform mat4 view;
@@ -27,13 +25,13 @@ uniform mat4 proj;
 
 out vec3 world_pos;
 out vec3 world_normal;
+out vec2 interp_tex_coord;
 
 void main() {
-	vec3 normal = vec3(0.0, 0.0, 1.0);
-
 	vec4 world_pos_4 = model * vec4(pos, 1.0);
 	world_pos = world_pos_4.xyz;
 	world_normal = mat3(model) * normal;
+	interp_tex_coord = tex_coord;
 
 	gl_Position = proj * view * world_pos_4;
 }
@@ -45,8 +43,10 @@ precision highp float;
 
 in vec3 world_pos;
 in vec3 world_normal;
+in vec2 interp_tex_coord;
 
 uniform sampler2D env;
+uniform sampler2D win_tex;
 uniform vec3 camera_pos;
 
 out vec4 frag_colour;
@@ -69,8 +69,9 @@ void main() {
 
 	vec2 uv = dir_to_equirect(normalize(R));
 	vec3 colour = texture(env, uv).rgb;
+	vec4 win_colour = texture(win_tex, interp_tex_coord);
 
-	frag_colour = vec4(colour, 1.0);
+	frag_colour = win_colour; // vec4(colour, 1.0);
 }
 );
 // clang-format on
