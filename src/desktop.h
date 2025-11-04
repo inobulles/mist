@@ -28,6 +28,7 @@ typedef struct {
 	XrSession sesh;
 	mist_env_t* env;
 
+	pthread_mutex_t win_mutex;
 	size_t win_count;
 	win_t* wins;
 
@@ -61,6 +62,8 @@ int desktop_render(
 	XrCompositionLayerProjection* layer,
 	XrCompositionLayerProjectionView** layer_views
 );
+
+void desktop_send_win(uint32_t id, uint32_t x_res, uint32_t y_res, void const* fb_data);
 
 #if defined(__cplusplus)
 }

@@ -76,6 +76,8 @@ void main() {
 );
 // clang-format on
 
+static desktop_t* global_desktop = NULL;
+
 int desktop_create(desktop_t* d, XrSession sesh, size_t view_count, XrViewConfigurationView* views, mist_env_t* env) {
 	// TODO Maybe the desktop should be responsible for the environment too?
 
@@ -84,6 +86,7 @@ int desktop_create(desktop_t* d, XrSession sesh, size_t view_count, XrViewConfig
 	d->win_count = 0;
 	d->wins = NULL;
 	d->view_count = view_count;
+	pthread_mutex_init(&d->win_mutex, NULL);
 
 	// Create swapchains.
 
@@ -181,15 +184,9 @@ int desktop_create(desktop_t* d, XrSession sesh, size_t view_count, XrViewConfig
 
 	d->win_camera_pos_uniform = glGetUniformLocation(d->win_shader, "camera_pos");
 	d->win_env_sampler_uniform = glGetUniformLocation(d->win_shader, "env");
+	d->win_sampler_uniform = glGetUniformLocation(d->win_shader, "win_tex");
 
-	// TODO Create dummy window.
-
-	d->win_count = 1;
-	d->wins = calloc(1, sizeof *d->wins);
-	assert(d->wins != NULL);
-
-	win_t* const win = &d->wins[0];
-	win_create(win);
+	global_desktop = d;
 
 	return 0;
 
@@ -223,11 +220,14 @@ void desktop_destroy(desktop_t* d) {
 
 	// Destroy windows.
 
+	pthread_mutex_lock(&d->win_mutex);
+
 	for (size_t i = 0; i < d->win_count; i++) {
 		win_destroy(&d->wins[i]);
 	}
 
 	free(d->wins);
+	pthread_mutex_destroy(&d->win_mutex);
 }
 
 int desktop_render(
@@ -335,9 +335,20 @@ int desktop_render(
 		glClearColor(0.0, 0.0, 0.0, 0.0);
 		glClear(GL_COLOR_BUFFER_BIT);
 
+		pthread_mutex_lock(&d->win_mutex);
+
 		for (size_t j = 0; j < d->win_count; j++) {
-			win_render(&d->wins[j]);
+			win_t* const win = &d->wins[j];
+
+			if (!win->created) {
+				win->created = true;
+				win_create(win);
+			}
+
+			win_render(win, d->win_sampler_uniform);
 		}
+
+		pthread_mutex_unlock(&d->win_mutex);
 
 		// Populate relevant layer view.
 
@@ -381,4 +392,47 @@ release:;
 	layer->views = *layer_views;
 
 	return 0;
+}
+
+void desktop_send_win(uint32_t id, uint32_t x_res, uint32_t y_res, void const* fb_data) {
+	if (global_desktop == NULL) {
+		return;
+	}
+
+	desktop_t* const d = global_desktop;
+
+	pthread_mutex_lock(&d->win_mutex);
+	win_t* win = NULL;
+
+	for (size_t i = 0; i < d->win_count; i++) {
+		win = &d->wins[i];
+
+		if (id == win->id) {
+			goto found;
+		}
+	}
+
+	// Not found, create window.
+
+	d->wins = realloc(d->wins, (d->win_count + 1) * sizeof *d->wins);
+	assert(d->wins != NULL);
+
+	win = &d->wins[d->win_count++];
+	win->id = id;
+	win->fb_data = NULL;
+	win->created = false;
+
+found:
+
+	// win_update_tex(win, x_res, y_res, fb_data);
+
+	win->x_res = x_res;
+	win->y_res = y_res;
+
+	free(win->fb_data);
+	win->fb_data = malloc(x_res * y_res * 4);
+	assert(win->fb_data != NULL);
+	memcpy(win->fb_data, fb_data, x_res * y_res * 4);
+
+	pthread_mutex_unlock(&d->win_mutex);
 }
