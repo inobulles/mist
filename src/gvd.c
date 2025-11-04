@@ -1,9 +1,12 @@
+#include "desktop.h"
 #include "log.h"
 
 #include <aqua/gv_agent.h>
+#include <aqua/mist.h>
 
 #include <arpa/inet.h>
 #include <assert.h>
+#include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
@@ -112,7 +115,46 @@ static int get_default_ifname(char* out_ifname, size_t len) {
 	return 0;
 }
 
+// TODO I stole this from an SO answer as a quick hack (TODO attribution).
+// But this is very much a stopgap; in fine, we should really have a way for Umber to output to more than just stdout/err.
+
+static int pfd[2];
+static pthread_t thr;
+
+static void* thread_func(void* _) {
+	ssize_t rdsz;
+	char buf[128];
+	while ((rdsz = read(pfd[0], buf, sizeof buf - 1)) > 0) {
+		if (buf[rdsz - 1] == '\n') {
+			--rdsz;
+		}
+		buf[rdsz] = 0; /* add null-terminator */
+		__android_log_write(ANDROID_LOG_DEBUG, "mist-log", buf);
+	}
+	return 0;
+}
+
+int start_logger(void) {
+	/* make stdout line-buffered and stderr unbuffered */
+	setvbuf(stdout, 0, _IOLBF, 0);
+	setvbuf(stderr, 0, _IONBF, 0);
+
+	/* create the pipe and redirect stdout and stderr */
+	pipe(pfd);
+	dup2(pfd[1], 1);
+	dup2(pfd[1], 2);
+
+	/* spawn the logging thread */
+	if (pthread_create(&thr, 0, thread_func, 0) == -1) {
+		return -1;
+	}
+	pthread_detach(thr);
+	return 0;
+}
+
 static void* vr_vdev_conn_listener_thread(void* arg) {
+	start_logger();
+
 	LOGI("%s: Create server UDS.", __func__);
 	int const server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
 
@@ -183,18 +225,42 @@ static void* vr_vdev_conn_listener_thread(void* arg) {
 	close(client_fd);
 	close(server_fd);
 
+	// TODO If we are to set this shit, it must be somehow before the app loads, because otherwise we can't set UMBER_LVL in libraries that use constructors.
+
+	setenv("GV_NODES_PATH", "/data/data/com.inobulles.mist/files/tmp/gv.nodes", true);
+	setenv("GV_LOCK_PATH", "/data/data/com.inobulles.mist/files/tmp/gv.lock", true);
+	setenv("GV_HOST_ID_PATH", "/data/data/com.inobulles.mist/files/tmp/gv.host_id", true);
+	setenv("UMBER_LVL", "*=v,aqua.gvd.elp=i", true);
+	setenv("UMBER_LINEBUF", "true", true);
+	setenv("VDRIVER_PATH", "/data/data/com.inobulles.mist/files/lib/vdriver", true);
+
 	gv_agent_t* const agent = gv_agent_create(received_fd, "aquabsd.black.vr", vdev_id);
 
 	if (agent == NULL) {
 		LOGE("Failed to create GrapeVine KOS agent.");
-		return NULL;
+		goto err_gv_agent_create;
 	}
+
+	vdriver_t* const vdriver = gv_agent_get_vdriver(agent);
+	mist_ops_t* const mist_ops = dlsym(vdriver->lib, "MIST_OPS");
+
+	if (mist_ops == NULL) {
+		LOGE("Could not find MIST_OPS on loaded aquabsd.black.vr VDRIVER.");
+		goto err_get_mist_ops;
+	}
+
+	mist_ops->send_win = desktop_send_win;
+	mist_ops->set = true;
 
 	gv_agent_loop(agent);
 
-	gv_agent_destroy(agent);
-	close(received_fd);
+err_get_mist_ops:
 
+	gv_agent_destroy(agent);
+
+err_gv_agent_create:
+
+	close(received_fd);
 	return NULL;
 }
 
