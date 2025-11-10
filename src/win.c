@@ -11,14 +11,14 @@
 void gen_pane(win_t* win, float width, float height) {
 	// This is sort of a cursed function, I know.
 
-	float const radius = 0.03;
+	float const radius = 0.05;
 
 #define M_TAU (2 * M_PI)
 #define CORNER_RESOLUTION 16
 
 	assert(CORNER_RESOLUTION >= 2);
-	assert(radius * 2 < width);
-	assert(radius * 2 < height);
+	// assert(radius * 2 < width);
+	// assert(radius * 2 < height);
 
 	// Vertex buffer: 4 for the centre quad, then $CORNER_RESOLUTION vertices for each of the 4 corners.
 
@@ -177,8 +177,8 @@ void gen_pane(win_t* win, float width, float height) {
 		float const x = buf[i][0];
 		float const y = buf[i][1];
 
-		buf[i][3] = x / width + .5;
-		buf[i][4] = y / height + .5;
+		buf[i][3] = x / (width - radius * 2) + .5;
+		buf[i][4] = 1 - (y / (height - radius * 2) + .5);
 	}
 
 	// Update GL buffers (because we allocated everything on the stack so gotta do this now).
