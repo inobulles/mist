@@ -52,3 +52,4 @@ There are a couple potential solutions to this:
 
 - Slightly out of date, but helped me with the steps to build APKs outside of Android Studio: <https://github.com/skanti/Android-Manual-Build-Command-Line>
 - Way nicer and clearer OpenXR examples than hello_xr: <https://github.com/KhronosGroup/OpenXR-Tutorials>
+- Space HDRi that I'm using for the space environment: <https://blenderartists.org/t/free-space-hdri/1517850>
