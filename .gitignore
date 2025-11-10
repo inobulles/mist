@@ -4,3 +4,5 @@ compile_commands.json
 assets/bin
 assets/include
 assets/lib
+assets/libdata
+assets/share
