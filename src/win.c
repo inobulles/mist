@@ -75,7 +75,7 @@ void gen_pane(win_t* win, float width, float height) {
 		// Top right.
 
 		buf[buf_off][0] = dist_x, buf[buf_off][1] = dist_y;
-		buf[buf_off][5] = nx, buf[buf_off][6] = ny, buf[buf_off][7] = 0;
+		buf[buf_off][5] = nx, buf[buf_off][6] = -ny, buf[buf_off][7] = 0;
 
 		if (i != 0) { // Corner triangle fan.
 			indices[tri_off][0] = 0;
@@ -98,7 +98,7 @@ void gen_pane(win_t* win, float width, float height) {
 		// Top left.
 
 		buf[buf_off][0] = -dist_x, buf[buf_off][1] = dist_y;
-		buf[buf_off][5] = -nx, buf[buf_off][6] = ny, buf[buf_off][7] = 0;
+		buf[buf_off][5] = -nx, buf[buf_off][6] = -ny, buf[buf_off][7] = 0;
 
 		if (i != 0) { // Corner triangle fan.
 			indices[tri_off][0] = 1;
@@ -121,7 +121,7 @@ void gen_pane(win_t* win, float width, float height) {
 		// Bottom left.
 
 		buf[buf_off][0] = -dist_x, buf[buf_off][1] = -dist_y;
-		buf[buf_off][5] = -nx, buf[buf_off][6] = -ny, buf[buf_off][7] = 0;
+		buf[buf_off][5] = -nx, buf[buf_off][6] = ny, buf[buf_off][7] = 0;
 
 		if (i != 0) { // Corner triangle fan.
 			indices[tri_off][0] = 2;
@@ -144,7 +144,7 @@ void gen_pane(win_t* win, float width, float height) {
 		// Bottom right.
 
 		buf[buf_off][0] = dist_x, buf[buf_off][1] = -dist_y;
-		buf[buf_off][5] = nx, buf[buf_off][6] = -ny, buf[buf_off][7] = 0;
+		buf[buf_off][5] = nx, buf[buf_off][6] = ny, buf[buf_off][7] = 0;
 
 		if (i != 0) { // Corner triangle fan.
 			indices[tri_off][0] = 3;
