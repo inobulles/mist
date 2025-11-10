@@ -300,11 +300,6 @@ int desktop_render(
 		matrix_identity(proj_matrix);
 		matrix_perspective(proj_matrix, view->fov, 0.1, 500);
 
-		matrix_t model_matrix;
-		matrix_identity(model_matrix);
-
-		matrix_translate(model_matrix, (float[3]) {0, 0, -2});
-
 		matrix_t view_matrix;
 		matrix_identity(view_matrix);
 
@@ -322,7 +317,6 @@ int desktop_render(
 
 		glUseProgram(d->win_shader); // TODO Does this only apply to bound framebuffer? Or global state? Test this out.
 
-		glUniformMatrix4fv(d->win_model_uniform, 1, false, (void*) &model_matrix);
 		glUniformMatrix4fv(d->win_view_uniform, 1, false, (void*) &view_matrix);
 		glUniformMatrix4fv(d->win_proj_uniform, 1, false, (void*) &proj_matrix);
 		glUniform3fv(d->win_camera_pos_uniform, 1, (float*) &view->pose.position);
@@ -338,15 +332,47 @@ int desktop_render(
 
 		pthread_mutex_lock(&d->win_mutex);
 
+		size_t win_count = 0;
+
+		for (size_t j = 0; j < d->win_count; j++) {
+			if (!d->wins[j].destroyed) {
+				win_count++;
+			}
+		}
+
+		float const angle_between = M_PI / 7;
+		float cur_angle = -(angle_between * (win_count - 1)) / 2;
+
 		for (size_t j = 0; j < d->win_count; j++) {
 			win_t* const win = &d->wins[j];
+
+			if (win->destroyed) {
+				if (win->created) {
+					win_destroy(win);
+					win->created = false;
+				}
+
+				continue;
+			}
 
 			if (!win->created) {
 				win->created = true;
 				win_create(win);
 			}
 
+			matrix_t model_matrix;
+			matrix_identity(model_matrix);
+
+			matrix_scale(model_matrix, (float[3]) {1, win->height, 1});
+			matrix_translate(model_matrix, (float[3]) {0, 0, 7});
+			matrix_rotate_2d(model_matrix, (float[2]) {-win->rot, 0});
+			matrix_translate(model_matrix, (float[3]) {0, .3, -10});
+			glUniformMatrix4fv(d->win_model_uniform, 1, false, (void*) &model_matrix);
+
+			win->target_rot = cur_angle;
 			win_render(win, d->win_sampler_uniform);
+
+			cur_angle += angle_between;
 		}
 
 		pthread_mutex_unlock(&d->win_mutex);
