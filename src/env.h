@@ -17,7 +17,12 @@ typedef struct {
 	uint32_t equirect_x_res;
 	uint32_t equirect_y_res;
 
+	uint32_t blur_equirect_x_res;
+	uint32_t blur_equirect_y_res;
+
 	GLuint equirect_tex;
+	GLuint blur_equirect_tex;
+
 	XrSwapchain equirect_swapchain;
 } mist_env_t;
 

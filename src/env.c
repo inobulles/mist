@@ -21,7 +21,7 @@ int mist_env_render(mist_env_t* env, XrSpace space, XrCompositionLayerEquirect2K
 	layer->space = space;
 	layer->eyeVisibility = XR_EYE_VISIBILITY_BOTH;
 	layer->radius = 0;
-	layer->centralHorizontalAngle = 2 * M_PI;
+	layer->centralHorizontalAngle = 2 * M_PI; // TODO Fix black line.
 	layer->upperVerticalAngle = M_PI_2;
 	layer->lowerVerticalAngle = -M_PI_2;
 
@@ -67,17 +67,15 @@ int mist_env_render(mist_env_t* env, XrSpace space, XrCompositionLayerEquirect2K
 	return rv;
 }
 
-int mist_env_create(mist_env_t* env, XrSession session, AAssetManager* mgr, char const* name) {
-	int rv = -1;
+static void* read_image(AAssetManager* mgr, char* path, uint32_t* x_res, uint32_t* y_res) {
+	void* buf = NULL;
 
 	// Open asset for equirectangular map.
 
-	char asset_path[256];
-	snprintf(asset_path, sizeof asset_path, "envs/%s/equirectangle.png", name);
-	AAsset* const asset = AAssetManager_open(mgr, asset_path, AASSET_MODE_STREAMING);
+	AAsset* const asset = AAssetManager_open(mgr, path, AASSET_MODE_STREAMING);
 
 	if (asset == NULL) {
-		LOGE("Could not load asset %s.", asset_path);
+		LOGE("Could not load asset %s.", path);
 		goto err_load_asset;
 	}
 
@@ -88,7 +86,7 @@ int mist_env_create(mist_env_t* env, XrSession session, AAssetManager* mgr, char
 	assert(asset_buf != NULL);
 
 	if (AAsset_read(asset, asset_buf, asset_size) < 0) {
-		LOGE("Could not read %s.", name);
+		LOGE("Could not read %s.", path);
 		goto err_read_asset;
 	}
 
@@ -97,12 +95,53 @@ int mist_env_create(mist_env_t* env, XrSession session, AAssetManager* mgr, char
 	stbi_set_flip_vertically_on_load(true);
 
 	int channels;
-	void* const buf = stbi_load_from_memory(asset_buf, asset_size, (int*) &env->equirect_x_res, (int*) &env->equirect_y_res, &channels, STBI_rgb_alpha);
+	buf = stbi_load_from_memory(asset_buf, asset_size, (int*) x_res, (int*) y_res, &channels, STBI_rgb_alpha);
 
 	if (buf == NULL) {
-		LOGE("Failed to decode image %s.", name);
+		LOGE("Failed to decode image %s.", path);
 		goto err_decode;
 	}
+
+err_decode:
+err_read_asset:
+
+	free(asset_buf);
+	AAsset_close(asset);
+
+err_load_asset:
+
+	return buf;
+}
+
+int mist_env_create(mist_env_t* env, XrSession session, AAssetManager* mgr, char const* name) {
+	int rv = -1;
+
+	// Read equirectangular map.
+
+	char asset_path[256];
+	snprintf(asset_path, sizeof asset_path, "envs/%s/equirectangle.png", name);
+	void* const buf = read_image(mgr, asset_path, &env->equirect_x_res, &env->equirect_y_res);
+
+	if (buf == NULL) {
+		goto err_equirect_read;
+	}
+
+	// Read blurred equirectangular map.
+
+	snprintf(asset_path, sizeof asset_path, "envs/%s/equirectangle_blur.png", name);
+	void* const blur_buf = read_image(mgr, asset_path, &env->blur_equirect_x_res, &env->blur_equirect_y_res);
+
+	if (buf == NULL) {
+		goto err_blur_equirect_read;
+	}
+
+	// Create blurred equirectangular map texture.
+
+	glGenTextures(1, &env->blur_equirect_tex);
+	glBindTexture(GL_TEXTURE_2D, env->blur_equirect_tex);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, env->blur_equirect_x_res, env->blur_equirect_y_res, 0, GL_RGBA, GL_UNSIGNED_BYTE, blur_buf);
+	glGenerateMipmap(GL_TEXTURE_2D);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
 	// Create swapchain.
 
@@ -169,15 +208,13 @@ err_enum_images:
 
 err_create_swapchain:
 
+	free(blur_buf);
+
+err_blur_equirect_read:
+
 	free(buf);
 
-err_decode:
-err_read_asset:
-
-	free(asset_buf);
-	AAsset_close(asset);
-
-err_load_asset:
+err_equirect_read:
 
 	return rv;
 }
