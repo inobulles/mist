@@ -6,6 +6,8 @@
 
 typedef struct {
 	bool created;
+	bool destroyed;
+
 	uint32_t id;
 
 	uint32_t x_res;
@@ -17,11 +19,16 @@ typedef struct {
 	GLuint vao;
 	GLuint vbo;
 	GLuint ibo;
+
+	float rot;
+	float target_rot;
+
+	float height;
+	float target_height;
 } win_t;
 
 void gen_pane(win_t* win, float width, float height);
 
 void win_create(win_t* win);
 void win_destroy(win_t* win);
-void win_update_tex(win_t* win, uint32_t x_res, uint32_t y_res, void const* fb_data);
 void win_render(win_t* win, GLuint uniform);

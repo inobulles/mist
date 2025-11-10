@@ -438,7 +438,15 @@ release:;
 	return 0;
 }
 
-void desktop_send_win(uint32_t id, uint32_t x_res, uint32_t y_res, void const* fb_data) {
+void desktop_send_win(
+	uint32_t id,
+	uint32_t x_res,
+	uint32_t y_res,
+	uint32_t tiles_x,
+	uint32_t tiles_y,
+	uint64_t const* tile_update_bitmap,
+	void const* tile_data
+) {
 	if (global_desktop == NULL) {
 		return;
 	}
@@ -464,19 +472,44 @@ void desktop_send_win(uint32_t id, uint32_t x_res, uint32_t y_res, void const* f
 	win = &d->wins[d->win_count++];
 	win->id = id;
 	win->fb_data = NULL;
+	win->x_res = 0;
+	win->y_res = 0;
 	win->created = false;
+	win->destroyed = false;
 
 found:
 
-	// win_update_tex(win, x_res, y_res, fb_data);
+	if (x_res != win->x_res || y_res != win->y_res) {
+		free(win->fb_data);
+		win->fb_data = malloc(x_res * y_res * 4);
+		assert(win->fb_data != NULL);
 
-	win->x_res = x_res;
-	win->y_res = y_res;
+		win->x_res = x_res;
+		win->y_res = y_res;
+	}
 
-	free(win->fb_data);
-	win->fb_data = malloc(x_res * y_res * 4);
-	assert(win->fb_data != NULL);
-	memcpy(win->fb_data, fb_data, x_res * y_res * 4);
+	uint32_t const tile_x_res = x_res / tiles_x;
+	uint32_t const tile_y_res = y_res / tiles_y;
+
+	size_t counter = 0; // Tile data index en gros.
+
+	for (size_t i = 0; i < tiles_y; i++) {
+		for (size_t j = 0; j < tiles_x; j++) {
+			size_t const tile_index = i * tiles_x + j;
+			bool const updated = tile_update_bitmap[tile_index / 64] & (1ull << (tile_index % 64));
+
+			if (!updated) {
+				continue;
+			}
+
+			for (size_t y = tile_y_res * i; y < tile_y_res * (i + 1); y++) {
+				for (size_t x = tile_x_res * j; x < tile_x_res * (j + 1); x++) {
+					((uint32_t*) win->fb_data)[y * x_res + x] = *((uint32_t*) (tile_data + counter));
+					counter += 4;
+				}
+			}
+		}
+	}
 
 	pthread_mutex_unlock(&d->win_mutex);
 }

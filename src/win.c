@@ -1,4 +1,5 @@
 #include "win.h"
+#include "log.h"
 
 #include <EGL/egl.h>
 #include <glad/gles2.h>
@@ -229,6 +230,10 @@ void gen_pane(win_t* win, float width, float height) {
 }
 
 void win_create(win_t* win) {
+	win->rot = 0;
+	win->height = 0;
+	win->target_height = 1;
+
 	// Create VAO, VBO, and IBO.
 
 	glGenVertexArrays(1, &win->vao);
@@ -251,13 +256,6 @@ void win_destroy(win_t* win) {
 	free(win->fb_data);
 }
 
-void win_update_tex(win_t* win, uint32_t x_res, uint32_t y_res, void const* fb_data) {
-	glBindTexture(GL_TEXTURE_2D, win->tex);
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, x_res, y_res, GL_RGBA, GL_UNSIGNED_BYTE, fb_data);
-
-	gen_buf(win, (float) x_res / 1000, (float) y_res / 1000);
-}
-
 void win_render(win_t* win, GLuint uniform) {
 	glActiveTexture(GL_TEXTURE1);
 	glBindTexture(GL_TEXTURE_2D, win->tex);
@@ -267,4 +265,7 @@ void win_render(win_t* win, GLuint uniform) {
 
 	glBindVertexArray(win->vao);
 	glDrawElements(GL_TRIANGLES, win->index_count, GL_UNSIGNED_BYTE, NULL);
+
+	win->rot += (win->target_rot - win->rot) * 0.1;
+	win->height += (win->target_height - win->height) * 0.1;
 }
