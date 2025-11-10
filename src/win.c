@@ -260,7 +260,15 @@ void win_render(win_t* win, GLuint uniform) {
 	glActiveTexture(GL_TEXTURE1);
 	glBindTexture(GL_TEXTURE_2D, win->tex);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, win->x_res, win->y_res, 0, GL_RGBA, GL_UNSIGNED_BYTE, win->fb_data);
-	glGenerateMipmap(GL_TEXTURE_2D);
+	glGenerateMipmap(GL_TEXTURE_2D); // TODO Necessary?
+	gen_pane(win, (float) win->x_res / 300, (float) win->y_res / 300);
+
+	glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, (float[]) {0, 0, 0, 0});
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
 	glUniform1i(uniform, 1);
 
 	glBindVertexArray(win->vao);
