@@ -1,6 +1,7 @@
 #pragma once
 
 #include "env.h"
+#include "platform.h"
 #include "win.h"
 
 #include <jni.h>
@@ -27,6 +28,7 @@ typedef struct {
 typedef struct {
 	XrSession sesh;
 	mist_env_t* env;
+	platform_t plat;
 
 	pthread_mutex_t win_mutex;
 	size_t win_count;

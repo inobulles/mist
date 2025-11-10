@@ -7,7 +7,7 @@
 #include <math.h>
 #include <stdlib.h>
 
-static void gen_buf(win_t* win, float width, float height) {
+void gen_pane(win_t* win, float width, float height) {
 	// This is sort of a cursed function, I know.
 
 	float const radius = 0.03;

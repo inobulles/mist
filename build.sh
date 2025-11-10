@@ -60,7 +60,7 @@ echo "Build objs."
 
 objs=
 
-for src in gvd env shader win desktop; do
+for src in gvd env shader win desktop platform; do
 	$CC \
 		-Wall \
 		-I$NATIVE_APP_GLUE_PATH -I$OPENXR_SDK/build/include -Isrc/glad/include -Iassets/include \

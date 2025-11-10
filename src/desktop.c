@@ -189,6 +189,10 @@ int desktop_create(desktop_t* d, XrSession sesh, size_t view_count, XrViewConfig
 
 	global_desktop = d;
 
+	// Create platform.
+
+	platform_create(&d->plat);
+
 	return 0;
 
 err:
@@ -329,6 +333,19 @@ int desktop_render(
 
 		glClearColor(0.0, 0.0, 0.0, 0.0);
 		glClear(GL_COLOR_BUFFER_BIT);
+
+		// Render platform.
+
+		// platform_render(&d->plat, d->win_sampler_uniform);
+
+		matrix_t model_matrix;
+		matrix_identity(model_matrix);
+
+		matrix_translate(model_matrix, (float[3]) {0, -1.8, 0});
+		matrix_rotate_2d(model_matrix, (float[2]) {0, M_PI / 2});
+		glUniformMatrix4fv(d->win_model_uniform, 1, false, (void*) &model_matrix);
+
+		// Render windows.
 
 		pthread_mutex_lock(&d->win_mutex);
 
