@@ -513,3 +513,30 @@ found:
 
 	pthread_mutex_unlock(&d->win_mutex);
 }
+
+void desktop_destroy_win(uint32_t id) {
+	if (global_desktop == NULL) {
+		return;
+	}
+
+	desktop_t* const d = global_desktop;
+
+	pthread_mutex_lock(&d->win_mutex);
+	win_t* win = NULL;
+
+	for (size_t i = 0; i < d->win_count; i++) {
+		win = &d->wins[i];
+
+		if (id == win->id) {
+			goto found;
+		}
+	}
+
+	LOGE("This shouldn't happen.");
+	return;
+
+found:
+
+	win->destroyed = true;
+	pthread_mutex_unlock(&d->win_mutex);
+}

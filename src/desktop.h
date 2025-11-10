@@ -75,6 +75,8 @@ void desktop_send_win(
 	void const* tile_data
 );
 
+void desktop_destroy_win(uint32_t id);
+
 #if defined(__cplusplus)
 }
 #endif

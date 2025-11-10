@@ -250,6 +250,7 @@ static void* vr_vdev_conn_listener_thread(void* arg) {
 	}
 
 	mist_ops->send_win = desktop_send_win;
+	mist_ops->destroy_win = desktop_destroy_win;
 	mist_ops->set = true;
 
 	gv_agent_loop(agent);
