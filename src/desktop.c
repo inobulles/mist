@@ -65,13 +65,14 @@ void main() {
 
 	/* TODO Fresnel? */
 
-	vec3 R = refract(V, N, 1.0 / 1.757 /* sapphire */);
+	vec3 R = refract(V, N, 1.0 / 1.333 /* water */);
 
 	vec2 uv = dir_to_equirect(normalize(R));
 	vec3 colour = texture(env, uv).rgb;
 	vec4 win_colour = texture(win_tex, interp_tex_coord);
+	vec3 unpremultiplied = win_colour.bgr / max(win_colour.a, 1e-8);
 
-	frag_colour = win_colour; // vec4(colour, 1.0);
+	frag_colour = vec4(unpremultiplied * win_colour.a + colour.rgb * (1.0 - win_colour.a), 1.0);
 }
 );
 // clang-format on
