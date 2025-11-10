@@ -326,7 +326,7 @@ int desktop_render(
 		glUniform3fv(d->win_camera_pos_uniform, 1, (float*) &view->pose.position);
 
 		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, d->env->equirect_tex);
+		glBindTexture(GL_TEXTURE_2D, d->env->blur_equirect_tex);
 		glUniform1i(d->win_env_sampler_uniform, 0);
 
 		glViewport(0, 0, swapchain->x_res, swapchain->y_res);
