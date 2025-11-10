@@ -152,45 +152,13 @@ int start_logger(void) {
 	return 0;
 }
 
-static void* vr_vdev_conn_listener_thread(void* arg) {
-	start_logger();
-
-	LOGI("%s: Create server UDS.", __func__);
-	int const server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-
-	if (server_fd < 0) {
-		LOGE("socket(AF_UNIX): %s", strerror(errno));
-		return NULL;
-	}
-
-	LOGI("%s: Bind.", __func__);
-	char const* const spec = "aquabsd.black.vr";
-
-	struct sockaddr_un addr = {0};
-	addr.sun_family = AF_UNIX;
-	addr.sun_path[0] = '\0'; // Abstract UDS.
-	strncpy(addr.sun_path + 1, spec, sizeof addr.sun_path - 1);
-
-	if (bind(server_fd, (struct sockaddr*) &addr, sizeof addr) < 0) {
-		LOGE("bind: %s", strerror(errno));
-		close(server_fd);
-		return NULL;
-	}
-
-	LOGI("%s: Listen.", __func__);
-
-	if (listen(server_fd, 1) < 0) {
-		LOGE("listen: %s", strerror(errno));
-		close(server_fd);
-		return NULL;
-	}
-
+static void handle_conn(int server_fd) {
 	LOGI("%s: Waiting for connection to accept.", __func__);
 	int const client_fd = accept(server_fd, NULL, NULL);
 
 	if (client_fd < 0) {
 		LOGE("accept: %s", strerror(errno));
-		return NULL;
+		return;
 	}
 
 	LOGI("%s: Waiting for message.", __func__);
@@ -212,7 +180,7 @@ static void* vr_vdev_conn_listener_thread(void* arg) {
 
 	if (recvmsg(client_fd, &msg, 0) < 0) {
 		LOGE("recvmsg: %s", strerror(errno));
-		return NULL;
+		return;
 	}
 
 	int received_fd = -1;
@@ -223,7 +191,6 @@ static void* vr_vdev_conn_listener_thread(void* arg) {
 	}
 
 	close(client_fd);
-	close(server_fd);
 
 	// TODO If we are to set this shit, it must be somehow before the app loads, because otherwise we can't set UMBER_LVL in libraries that use constructors.
 
@@ -262,7 +229,46 @@ err_get_mist_ops:
 err_gv_agent_create:
 
 	close(received_fd);
-	return NULL;
+}
+
+static void* vr_vdev_conn_listener_thread(void* arg) {
+	start_logger();
+
+	LOGI("%s: Create server UDS.", __func__);
+	int const server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+
+	if (server_fd < 0) {
+		LOGE("socket(AF_UNIX): %s", strerror(errno));
+		return NULL;
+	}
+
+	LOGI("%s: Bind.", __func__);
+	char const* const spec = "aquabsd.black.vr";
+
+	struct sockaddr_un addr = {0};
+	addr.sun_family = AF_UNIX;
+	addr.sun_path[0] = '\0'; // Abstract UDS.
+	strncpy(addr.sun_path + 1, spec, sizeof addr.sun_path - 1);
+
+	if (bind(server_fd, (struct sockaddr*) &addr, sizeof addr) < 0) {
+		LOGE("bind: %s", strerror(errno));
+		close(server_fd);
+		return NULL;
+	}
+
+	LOGI("%s: Listen.", __func__);
+
+	if (listen(server_fd, 5) < 0) {
+		LOGE("listen: %s", strerror(errno));
+		close(server_fd);
+		return NULL;
+	}
+
+	for (;;) { // TODO This doesn't actually work lol. Need to figure out at what point we're not accepting sockets (i.e. here for the UDS or in gvd).
+		handle_conn(server_fd);
+	}
+
+	close(server_fd);
 }
 
 typedef struct {
