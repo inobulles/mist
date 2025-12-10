@@ -5,6 +5,10 @@ Prototype for connecting Android-based VR headsets (currently targeting and test
 The VDRIVER code is being developed in the AQUA monorepo.
 This repo just contains the code for the Android app, which interacts with the headset through OpenXR and which uses OpenGL ES to render the virtual environment and desktop.
 
+|Firefox in "serenity" environment|`htop` in "galaxy" environment|Firefox in "galaxy" environment|
+|-|-|-|
+|![Firefox in "serenity" environment](eyecandy/firefox-serenity.jpg)|![`htop` in "galaxy" environment](eyecandy/htop-galaxy.jpg)|![Firefox in "galaxy" environment](eyecandy/firefox-galaxy.jpg)|
+
 ## Building
 
 Gradle makes me sad and I kind of despise Android Studio, so I'm doing this manually in a `build.sh` script.
